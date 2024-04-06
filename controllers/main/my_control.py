@@ -45,6 +45,7 @@ def get_command(sensor_data, camera_data, dt):
     # NOTE: Displaying the camera image will slow down the simulation, this is just for testing
     # cv2.imshow('Camera Feed', camera_data)
     # cv2.waitKey(1)
+
     
     # Take off
     if startpos is None:
@@ -55,9 +56,31 @@ def get_command(sensor_data, camera_data, dt):
     else:
         on_ground = False
 
+
+
     # ---- YOUR CODE HERE ----
-    control_command = [0.0, 0.0, height_desired, 1.0]
+    thresh_pink = np.array([[140, 110, 110], [180, 255, 255]])
+
+    control_command = [0.0, 0.0, height_desired, 0.0]
     on_ground = False
+    hsv = cv2.cvtColor(camera_data, cv2.COLOR_BGR2HSV)
+
+
+    # Threshold the HSV image to get only pink colors
+    square_mask = cv2.inRange(hsv, thresh_pink[0], thresh_pink[1])
+
+    if(not np.any(square_mask)):
+        return control_command
+
+    # Bitwise-AND mask and original image
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(square_mask)
+
+    largest_component_label = np.argmax(stats[1:, cv2.CC_STAT_AREA]) + 1
+
+    largest_component_mask = np.uint8(labels == largest_component_label) * 255
+    
+    cv2.imshow('Camera Feed', square_mask)
+    cv2.waitKey(1)
     # map = occupancy_map(sensor_data)
     
     return control_command # [vx, vy, alt, yaw_rate]
