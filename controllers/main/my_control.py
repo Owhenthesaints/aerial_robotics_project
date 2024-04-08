@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import time
 import cv2
 from enum import Enum
+from scipy.ndimage import measurements
 
 # Global variables
 on_ground = True
@@ -53,30 +54,72 @@ class StateEnum(Enum):
 
 
 DEFAULT_RESPONSE = (0, 0, height_desired, 0)
+PINK_FILTER_DEBUG = False
+LOCAL_AVOIDANCE_LR_THRESH = 0.5
+# in pixels
+CENTROID_THRESHOLD = 20
+YAW_RATE = 1
 
 
 def search_pink(sensor_data, camera_data):
-    case = StateEnum.SEARCH_PINK.value
+    #init state and if done with state return state+1
+    state = StateEnum.SEARCH_PINK.value
+    # initialise a prefered direction (if the drone starts on the left if pink not found go to the right)
+    if not hasattr(search_pink, "prefered_dir_left"):
+        if sensor_data["y_global"] < 1.5:
+            search_pink.prefered_dir_left = True
+        else:
+            search_pink.prefered_dir_left = False
 
     hsv = cv2.cvtColor(camera_data, cv2.COLOR_BGR2HSV)
 
     # Threshold the HSV image to get only pink colors
     square_mask = cv2.inRange(hsv, THRESH_PINK[0], THRESH_PINK[1])
 
-    # if pink_not_found
-    if (not np.any(square_mask)):
-        return list(DEFAULT_RESPONSE), case
+    if sensor_data["range_left"]<LOCAL_AVOIDANCE_LR_THRESH and search_pink.prefered_dir_left:
+        search_pink.prefered_dir_left = False
+        return DEFAULT_RESPONSE, state
+    elif sensor_data["range_right"]<LOCAL_AVOIDANCE_LR_THRESH and not search_pink.prefered_dir_left:
+        search_pink.prefered_dir_left = True
+        return DEFAULT_RESPONSE, state
 
-    # Bitwise-AND mask and original image
+    # if pink_not_found
+    if not np.any(square_mask):
+        if search_pink.prefered_dir_left:
+            print("going_left")
+            return [0, 1.0, height_desired, 0], state
+        else:
+            print("going_right")
+            return [0, -1.0, height_desired, 0], state
+
+    # if pink on very left side of camera
+    if np.any(square_mask[:,0]):
+        return [0, 1.0, height_desired, 0], state
+    elif np.any(square_mask[:, -1]):
+        return [0, -1.0, height_desired, 0], state
+
+
+    # finding largest pink area
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(square_mask)
 
     largest_component_label = np.argmax(stats[1:, cv2.CC_STAT_AREA]) + 1
 
-    largest_component_mask = np.uint8(labels == largest_component_label) * 255
+    largest_component_mask = np.uint8(labels == largest_component_label)
 
-    cv2.imshow('Camera Feed', largest_component_mask)
-    cv2.waitKey(1)
-    return list(DEFAULT_RESPONSE), case
+    if PINK_FILTER_DEBUG:
+        cv2.imshow('Camera Feed', largest_component_mask*255)
+        cv2.waitKey(1)
+
+    #from centroid trying to get pink square in center
+    centroid = measurements.center_of_mass(largest_component_mask)
+
+    # if centroid to the right yaw right else yaw left until centroid in middle of screen
+    if centroid[1]>len(camera_data)/2+1+CENTROID_THRESHOLD:
+        return [0, 0, height_desired, -YAW_RATE], state
+    elif centroid[1]<len(camera_data)/2+1-CENTROID_THRESHOLD:
+        return [0, 0, height_desired, YAW_RATE], state
+
+    return list(DEFAULT_RESPONSE), state
 
 
 def go_to_pink(sensor_data, camera_data):
@@ -157,6 +200,7 @@ def get_command(sensor_data, camera_data, dt):
     on_ground = False
     # map = occupancy_map(sensor_data)
 
+    print(sensor_data["x_global"], sensor_data["y_global"], sensor_data["z_global"])
     return control_command  # [vx, vy, alt, yaw_rate]
 
 
@@ -252,7 +296,7 @@ def path_to_setpoint(path, sensor_data, dt):
     # Get the goal position and drone position
     current_setpoint = path[index_current_setpoint]
     x_drone, y_drone, z_drone, yaw_drone = sensor_data['x_global'], sensor_data['y_global'], sensor_data['z_global'], \
-    sensor_data['yaw']
+        sensor_data['yaw']
     distance_drone_to_goal = np.linalg.norm(
         [current_setpoint[0] - x_drone, current_setpoint[1] - y_drone, current_setpoint[2] - z_drone,
          clip_angle(current_setpoint[3]) - clip_angle(yaw_drone)])
