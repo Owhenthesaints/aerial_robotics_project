@@ -54,100 +54,104 @@ class StateEnum(Enum):
 
 
 DEFAULT_RESPONSE = (0, 0, height_desired, 0)
-PINK_FILTER_DEBUG = False
+PINK_FILTER_DEBUG = True
 LOCAL_AVOIDANCE_LR_THRESH = 0.5
 # in pixels
 CENTROID_THRESHOLD = 20
 YAW_RATE = 1
+AREA_THRESHOLD = 30
 
 
-def search_pink(sensor_data, camera_data):
-    #init state and if done with state return state+1
+def search_pink(sensor_data, camera_data, map):
+    # init state and if done with state return state+1
     state = StateEnum.SEARCH_PINK.value
+
     # initialise a prefered direction (if the drone starts on the left if pink not found go to the right)
-    if not hasattr(search_pink, "prefered_dir_left"):
-        if sensor_data["y_global"] < 1.5:
-            search_pink.prefered_dir_left = True
-        else:
-            search_pink.prefered_dir_left = False
+    # equivalent of static values C++
+    def give_attribute(attr: str, value):
+        if not hasattr(search_pink, attr):
+            setattr(search_pink, attr, value)
+
+    if sensor_data["y_global"] < 1.5:
+        give_attribute("prefered_dir_left", True)
+    else:
+        give_attribute("prefered_dir_left", False)
 
     hsv = cv2.cvtColor(camera_data, cv2.COLOR_BGR2HSV)
 
     # Threshold the HSV image to get only pink colors
     square_mask = cv2.inRange(hsv, THRESH_PINK[0], THRESH_PINK[1])
 
-    if sensor_data["range_left"]<LOCAL_AVOIDANCE_LR_THRESH and search_pink.prefered_dir_left:
-        search_pink.prefered_dir_left = False
-        return DEFAULT_RESPONSE, state
-    elif sensor_data["range_right"]<LOCAL_AVOIDANCE_LR_THRESH and not search_pink.prefered_dir_left:
-        search_pink.prefered_dir_left = True
-        return DEFAULT_RESPONSE, state
+    #defining them outer scope
+    stats = largest_component_label = largest_component_mask = None
 
     # if pink_not_found
-    if not np.any(square_mask):
+    if np.any(square_mask):
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(square_mask)
+        largest_component_label = np.argmax(stats[1:, cv2.CC_STAT_AREA]) + 1
+        largest_component_mask = np.uint8(labels == largest_component_label)
+
+    if not np.any(square_mask) or stats[largest_component_label, cv2.CC_STAT_AREA]<=AREA_THRESHOLD:
         if search_pink.prefered_dir_left:
-            print("going_left")
-            return [0, 1.0, height_desired, 0], state
+            print("turning_left")
+            return [0, 0.0, height_desired, 1], state
         else:
             print("going_right")
-            return [0, -1.0, height_desired, 0], state
+            return [0, 0.0, height_desired, -1], state
 
     # if pink on very left side of camera
-    if np.any(square_mask[:,0]):
+    if np.any(square_mask[:, 0]):
         return [0, 1.0, height_desired, 0], state
     elif np.any(square_mask[:, -1]):
         return [0, -1.0, height_desired, 0], state
 
-
     # finding largest pink area
-    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(square_mask)
 
-    largest_component_label = np.argmax(stats[1:, cv2.CC_STAT_AREA]) + 1
 
-    largest_component_mask = np.uint8(labels == largest_component_label)
-
-    if PINK_FILTER_DEBUG:
-        cv2.imshow('Camera Feed', largest_component_mask*255)
+    if PINK_FILTER_DEBUG and largest_component_mask is not None:
+        print("I am here")
+        cv2.imshow('Camera Feed', largest_component_mask * 255)
         cv2.waitKey(1)
 
-    #from centroid trying to get pink square in center
-    centroid = measurements.center_of_mass(largest_component_mask)
+    if largest_component_mask is not None:
+        # from centroid trying to get pink square in center
+        centroid = measurements.center_of_mass(largest_component_mask)
 
-    # if centroid to the right yaw right else yaw left until centroid in middle of screen
-    if centroid[1]>len(camera_data)/2+1+CENTROID_THRESHOLD:
-        return [0, 0, height_desired, -YAW_RATE], state
-    elif centroid[1]<len(camera_data)/2+1-CENTROID_THRESHOLD:
-        return [0, 0, height_desired, YAW_RATE], state
+        # if centroid to the right yaw right else yaw left until centroid in middle of screen
+        if centroid[1] > len(camera_data) / 2 + 1 + CENTROID_THRESHOLD:
+            return [0, 0, height_desired, -YAW_RATE], state
+        elif centroid[1] < len(camera_data) / 2 + 1 - CENTROID_THRESHOLD:
+            return [0, 0, height_desired, YAW_RATE], state
 
     return list(DEFAULT_RESPONSE), state
 
 
-def go_to_pink(sensor_data, camera_data):
+def go_to_pink(sensor_data, camera_data, map):
     case = StateEnum.GO_TO_PINK.value
     return list(DEFAULT_RESPONSE), case
 
 
-def go_to_fz(sensor_data, camera_data):
+def go_to_fz(sensor_data, camera_data, map):
     case = StateEnum.GO_TO_FZ
     return list(DEFAULT_RESPONSE), case
 
 
-def find_landing_pad(sensor_data, camera_data):
+def find_landing_pad(sensor_data, camera_data, map):
     case = StateEnum.FIND_LANDING_PAD
     return list(DEFAULT_RESPONSE), case
 
 
-def back_find_pink(sensor_data, camera_data):
+def back_find_pink(sensor_data, camera_data, map):
     case = StateEnum.BACK_FIND_PINK
     return list(DEFAULT_RESPONSE), case
 
 
-def back_to_pink(sensor_data, camera_data):
+def back_to_pink(sensor_data, camera_data, map):
     case = StateEnum.BACK_TO_PINK
     return list(DEFAULT_RESPONSE), case
 
 
-def back_to_start(sensor_data, camera_data):
+def back_to_start(sensor_data, camera_data, map):
     case = StateEnum.BACK_TO_START
     return list(DEFAULT_RESPONSE), case
 
@@ -187,9 +191,11 @@ def get_command(sensor_data, camera_data, dt):
 
     # ---- YOUR CODE HERE ----
     # seting up the static_state value
+    map = occupancy_map(sensor_data)
+
     def access_function(case):
         nonlocal sensor_data, camera_data
-        return FSM_DICO.get(case, default_case)(sensor_data, camera_data)
+        return FSM_DICO.get(case, default_case)(sensor_data, camera_data, map)
 
     if not hasattr(get_command, "static_state"):
         get_command.static_state = StateEnum.SEARCH_PINK.value
@@ -198,7 +204,6 @@ def get_command(sensor_data, camera_data, dt):
     control_command, get_command.static_state = access_function(get_command.static_state)
 
     on_ground = False
-    # map = occupancy_map(sensor_data)
 
     print(sensor_data["x_global"], sensor_data["y_global"], sensor_data["z_global"])
     return control_command  # [vx, vy, alt, yaw_rate]
