@@ -21,7 +21,7 @@ THRESH_PINK = np.array([[140, 110, 110], [180, 255, 255]])
 # "z_global": Global Z position
 # "roll": Roll angle (rad)
 # "pitch": Pitch angle (rad)
-# "yaw": Yaw angle (rad)
+# "yaw": Yaw angle (rad) 0 is front + right hand rule [-pi;pi]
 # "v_x": Global X velocity
 # "v_y": Global Y velocity
 # "v_z": Global Z velocity
@@ -62,6 +62,8 @@ YAW_RATE = 1
 AREA_THRESHOLD = 30
 
 
+
+
 def search_pink(sensor_data, camera_data, map):
     # init state and if done with state return state+1
     state = StateEnum.SEARCH_PINK.value
@@ -82,22 +84,40 @@ def search_pink(sensor_data, camera_data, map):
     # Threshold the HSV image to get only pink colors
     square_mask = cv2.inRange(hsv, THRESH_PINK[0], THRESH_PINK[1])
 
-    #defining them outer scope
+    # defining them outer scope
     stats = largest_component_label = largest_component_mask = None
 
-    # if pink_not_found
+    # if pink found
     if np.any(square_mask):
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(square_mask)
         largest_component_label = np.argmax(stats[1:, cv2.CC_STAT_AREA]) + 1
         largest_component_mask = np.uint8(labels == largest_component_label)
 
-    if not np.any(square_mask) or stats[largest_component_label, cv2.CC_STAT_AREA]<=AREA_THRESHOLD:
+    print("sensor_data", sensor_data["yaw"])
+
+    # check whether pink square has been found
+    def no_pink():
+        nonlocal square_mask, stats, largest_component_label
+        return not np.any(square_mask) or stats[largest_component_label, cv2.CC_STAT_AREA] <= AREA_THRESHOLD
+
+    # if pink not found or too small an area or
+    if no_pink() and (np.pi / 2 > sensor_data["yaw"] > -np.pi / 2):
+        # print filter
+        if PINK_FILTER_DEBUG and largest_component_mask is not None:
+            print("I am here")
+            cv2.imshow('Camera Feed', largest_component_mask * 255)
+            cv2.waitKey(1)
+        # do manipulation
         if search_pink.prefered_dir_left:
             print("turning_left")
-            return [0, 0.0, height_desired, 1], state
+            return [0, 0.0, height_desired, YAW_RATE], state
         else:
             print("going_right")
-            return [0, 0.0, height_desired, -1], state
+            return [0, 0.0, height_desired, -YAW_RATE], state
+    elif no_pink() and (np.pi/2 < sensor_data["yaw"] or sensor_data["yaw"] < -np.pi / 2):
+        # find the longest free line on the map
+        pass
+
 
     # if pink on very left side of camera
     if np.any(square_mask[:, 0]):
@@ -106,12 +126,6 @@ def search_pink(sensor_data, camera_data, map):
         return [0, -1.0, height_desired, 0], state
 
     # finding largest pink area
-
-
-    if PINK_FILTER_DEBUG and largest_component_mask is not None:
-        print("I am here")
-        cv2.imshow('Camera Feed', largest_component_mask * 255)
-        cv2.waitKey(1)
 
     if largest_component_mask is not None:
         # from centroid trying to get pink square in center
