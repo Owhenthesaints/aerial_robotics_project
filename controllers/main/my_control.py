@@ -54,14 +54,14 @@ class StateEnum(Enum):
 
 
 DEFAULT_RESPONSE = (0, 0, height_desired, 0)
-PINK_FILTER_DEBUG = True
+PINK_FILTER_DEBUG = False
 LOCAL_AVOIDANCE_LR_THRESH = 0.5
 # in pixels
 CENTROID_THRESHOLD = 20
 YAW_RATE = 1
 AREA_THRESHOLD = 30
-
-
+TURN_LEFT = (0, 0, height_desired, YAW_RATE)
+TURN_RIGHT = (0, 0, height_desired, -YAW_RATE)
 
 
 def search_pink(sensor_data, camera_data, map):
@@ -78,6 +78,8 @@ def search_pink(sensor_data, camera_data, map):
         give_attribute("prefered_dir_left", True)
     else:
         give_attribute("prefered_dir_left", False)
+    give_attribute("angle_done", False)
+    give_attribute("angle_sweep_done", False)
 
     hsv = cv2.cvtColor(camera_data, cv2.COLOR_BGR2HSV)
 
@@ -92,38 +94,54 @@ def search_pink(sensor_data, camera_data, map):
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(square_mask)
         largest_component_label = np.argmax(stats[1:, cv2.CC_STAT_AREA]) + 1
         largest_component_mask = np.uint8(labels == largest_component_label)
-
-    print("sensor_data", sensor_data["yaw"])
+        if PINK_FILTER_DEBUG and largest_component_mask is not None:
+            cv2.imshow('Camera Feed', largest_component_mask * 255)
+            cv2.waitKey(1)
 
     # check whether pink square has been found
     def no_pink():
         nonlocal square_mask, stats, largest_component_label
         return not np.any(square_mask) or stats[largest_component_label, cv2.CC_STAT_AREA] <= AREA_THRESHOLD
 
-    # if pink not found or too small an area or
-    if no_pink() and (np.pi / 2 > sensor_data["yaw"] > -np.pi / 2):
-        # print filter
-        if PINK_FILTER_DEBUG and largest_component_mask is not None:
-            print("I am here")
-            cv2.imshow('Camera Feed', largest_component_mask * 255)
-            cv2.waitKey(1)
-        # do manipulation
-        if search_pink.prefered_dir_left:
-            print("turning_left")
-            return [0, 0.0, height_desired, YAW_RATE], state
+    def turn_return(left, reversed = False):
+        if not reversed:
+            if left:
+                return list(TURN_LEFT), state
+            return list(TURN_RIGHT), state
         else:
-            print("going_right")
-            return [0, 0.0, height_desired, -YAW_RATE], state
-    elif no_pink() and (np.pi/2 < sensor_data["yaw"] or sensor_data["yaw"] < -np.pi / 2):
-        # find the longest free line on the map
-        pass
+            if left:
+                return list(TURN_RIGHT), state
+            return list(TURN_LEFT), state
 
+
+
+    if search_pink.angle_sweep_done:
+        print("hooray done")
+        return list(DEFAULT_RESPONSE), state
+
+    # the objective is to be done with angle sweeping if no pink is found
+    if no_pink() and not search_pink.angle_sweep_done:
+        # if gove above 90° do this
+        if search_pink.angle_done:
+            if ((sensor_data["yaw"] > 0 and not search_pink.prefered_dir_left)
+                    or (sensor_data["yaw"] < 0 and search_pink.prefered_dir_left)):
+                search_pink.angle_sweep_done = True
+                return list(DEFAULT_RESPONSE), state
+            return turn_return(search_pink.prefered_dir_left, True)
+        # if within 90° turn towards prefered_dir
+        elif np.pi / 2 > sensor_data["yaw"] > -np.pi / 2:
+            return turn_return(left=search_pink.prefered_dir_left)
+        # if out of [-90;90] angle done
+        elif not search_pink.angle_done:
+            search_pink.angle_done = True
+        else:
+            raise BrokenPipeError("Not supposed to be here")
 
     # if pink on very left side of camera
     if np.any(square_mask[:, 0]):
-        return [0, 1.0, height_desired, 0], state
+        return list(TURN_LEFT), state
     elif np.any(square_mask[:, -1]):
-        return [0, -1.0, height_desired, 0], state
+        return list(TURN_RIGHT), state
 
     # finding largest pink area
 
