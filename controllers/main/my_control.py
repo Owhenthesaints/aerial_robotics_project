@@ -60,9 +60,10 @@ LOCAL_AVOIDANCE_LR_THRESH = 0.5
 # in pixels
 CENTROID_THRESHOLD = 20
 YAW_RATE = 1
-AREA_THRESHOLD = 30
+AREA_THRESHOLD = 100
 TURN_LEFT = (0, 0, height_desired, YAW_RATE)
 TURN_RIGHT = (0, 0, height_desired, -YAW_RATE)
+GO_STRAIGHT = (1, 0, height_desired, 0)
 
 
 def turn_return(left, state, reversed=False):
@@ -161,7 +162,7 @@ def search_pink(sensor_data, camera_data, map):
 
 def go_to_pink(sensor_data, camera_data, map):
     case = StateEnum.GO_TO_PINK.value
-    return list(DEFAULT_RESPONSE), case
+    return list(GO_STRAIGHT), case
 
 
 def go_to_fz(sensor_data, camera_data, map):

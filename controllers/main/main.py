@@ -10,6 +10,11 @@ import my_control
 import time, random
 import cv2
 
+# seed 0 hard case
+# seed 1 easy case
+INTERESTING_SEEDS = [0, 1]
+SEED = INTERESTING_SEEDS[0]
+
 exp_num = 3                     # 0: Coordinate Transformation, 1: PID Tuning, 2: Kalman Filter, 3: Practical
 control_style = 'autonomous'      # 'keyboard' or 'autonomous'
 
@@ -110,6 +115,7 @@ class CrazyflieInDroneDome(Supervisor):
         # # init_yaw_drone = np.pi/6
         # rotation_field = drone.getField('rotation')
         # rotation_field.setSFRotation([0, 0, 1, init_yaw_drone])
+        random.seed(SEED)
 
         # For the assignment, randomise the positions of the drone, obstacles, goal, take-off pad and landing pad 
         if exp_num == 3:
