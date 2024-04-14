@@ -12,8 +12,9 @@ import cv2
 
 # seed 0 hard case
 # seed 1 easy case
-INTERESTING_SEEDS = [0, 1]
-SEED = INTERESTING_SEEDS[1]
+# seed 2 extra simple
+INTERESTING_SEEDS = [0, 1, 2]
+SEED = 3
 
 exp_num = 3                     # 0: Coordinate Transformation, 1: PID Tuning, 2: Kalman Filter, 3: Practical
 control_style = 'autonomous'      # 'keyboard' or 'autonomous'

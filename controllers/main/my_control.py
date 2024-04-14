@@ -60,11 +60,21 @@ DEFAULT_RESPONSE = (0, 0, height_desired, 0)
 LOCAL_AVOIDANCE_LR_THRESH = 0.5
 # in pixels
 CENTROID_THRESHOLD = 20
-YAW_RATE = 1
-AREA_THRESHOLD = 100
+YAW_RATE = 2
+# big area threshold so that we drone is forced to find full square not just side
+AREA_THRESHOLD = 500
 TURN_LEFT = (0, 0, height_desired, YAW_RATE)
 TURN_RIGHT = (0, 0, height_desired, -YAW_RATE)
 GO_STRAIGHT = (1, 0, height_desired, 0)
+
+
+def divide_map(map):
+    """
+    divide the map 2s are free squares, 1s are occupied and 0s are unexplored
+    """
+    map_copy = np.where(map > 0, 2, map)
+    map_copy = np.where(map < 0, 1, map_copy)
+    return map_copy
 
 
 def turn_return(left, state, reversed=False):
@@ -83,9 +93,11 @@ def turn_return(left, state, reversed=False):
         return list(TURN_LEFT), state
 
 
+# the point is to have a working map
 def initial_sweep(sensor_data, camera_data, map):
     # init state and if done with state return state+1
     state = StateEnum.INITIAL_SWEEP.value
+
     # equivalent of static values C++
     def give_attribute(attr: str, value):
         if not hasattr(initial_sweep, attr):
@@ -97,7 +109,6 @@ def initial_sweep(sensor_data, camera_data, map):
         give_attribute("prefered_dir_left", False)
     give_attribute("angle_done", False)
     give_attribute("angle_sweep_done", False)
-
 
     if initial_sweep.angle_sweep_done:
         return list(DEFAULT_RESPONSE), state + 1
@@ -117,17 +128,25 @@ def initial_sweep(sensor_data, camera_data, map):
         # if out of [-90;90] angle done
         elif not initial_sweep.angle_done:
             initial_sweep.angle_done = True
-            return list(DEFAULT_RESPONSE), state
+            return turn_return(initial_sweep.prefered_dir_left, state, True)
         else:
             raise BrokenPipeError("Not supposed to be here in no_pink condition")
 
     # trying to turn so that the centroids go to the middle of the screen.
 
     # go to next state
-    return list(DEFAULT_RESPONSE), state +1
+    return list(DEFAULT_RESPONSE), state + 1
+
 
 def search_pink(sensor_data, camera_data, map):
     state = StateEnum.SEARCH_PINK.value
+    useable_map = divide_map(map)
+
+    def give_attribute(attr: str, value):
+        if not hasattr(search_pink, attr):
+            setattr(search_pink, attr, value)
+
+    give_attribute("line_objective", None)
 
     if MAP_DEBUG:
         cv2.imshow("map", map)
@@ -156,7 +175,19 @@ def search_pink(sensor_data, camera_data, map):
         return not np.any(square_mask) or stats[largest_component_label, cv2.CC_STAT_AREA] <= AREA_THRESHOLD
 
     if no_pink():
-        pass
+        # find row with most freedom of movement
+        if search_pink.line_objective is None:
+            largest_row = 0
+            largest_row_count = 0
+            for index, row in enumerate(useable_map):
+                count = np.sum(row==2)
+                if count>largest_row_count:
+                    largest_row_count = count
+                    largest_row = index
+            search_pink.line_objective = largest_row
+        print("line objective", search_pink.line_objective)
+
+        #go towards that row
     else:
         # from centroid trying to get pink square in center
         centroid = measurements.center_of_mass(largest_component_mask)
@@ -168,7 +199,6 @@ def search_pink(sensor_data, camera_data, map):
             return list(TURN_LEFT), state
 
     return list(DEFAULT_RESPONSE), state
-
 
 
 def go_to_pink(sensor_data, camera_data, map):
