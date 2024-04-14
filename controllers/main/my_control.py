@@ -44,12 +44,13 @@ THRESH_PINK = np.array([[140, 110, 110], [180, 255, 255]])
 
 # class implementation of the FSM
 class StateEnum(Enum):
-    SEARCH_PINK = 0
-    GO_TO_PINK = 1
-    GO_TO_FZ = 2
-    FIND_LANDING_PAD = 3
-    BACK_FIND_PINK = 4
-    BACK_TO_PINK = 5
+    INITIAL_SWEEP = 0
+    SEARCH_PINK = 1
+    GO_TO_PINK = 2
+    GO_TO_FZ = 3
+    FIND_LANDING_PAD = 4
+    BACK_FIND_PINK = 5
+    BACK_TO_PINK = 6
     BACK_TO_START = 7  # do not search LP just go to LP stored in beginning
 
 
@@ -82,13 +83,13 @@ def turn_return(left, state, reversed=False):
         return list(TURN_LEFT), state
 
 
-def search_pink(sensor_data, camera_data, map):
+def initial_sweep(sensor_data, camera_data, map):
     # init state and if done with state return state+1
-    state = StateEnum.SEARCH_PINK.value
+    state = StateEnum.INITIAL_SWEEP.value
     # equivalent of static values C++
     def give_attribute(attr: str, value):
-        if not hasattr(search_pink, attr):
-            setattr(search_pink, attr, value)
+        if not hasattr(initial_sweep, attr):
+            setattr(initial_sweep, attr, value)
 
     if sensor_data["y_global"] < 1.5:
         give_attribute("prefered_dir_left", True)
@@ -96,6 +97,37 @@ def search_pink(sensor_data, camera_data, map):
         give_attribute("prefered_dir_left", False)
     give_attribute("angle_done", False)
     give_attribute("angle_sweep_done", False)
+
+
+    if initial_sweep.angle_sweep_done:
+        return list(DEFAULT_RESPONSE), state + 1
+
+    # the objective of this code is to SWEEP an angle to 90 back to 0 in order to feed map
+    if not initial_sweep.angle_sweep_done:
+        # if gove above 90° do this
+        if initial_sweep.angle_done:
+            if ((sensor_data["yaw"] > 0 and not initial_sweep.prefered_dir_left)
+                    or (sensor_data["yaw"] < 0 and initial_sweep.prefered_dir_left)):
+                initial_sweep.angle_sweep_done = True
+                return list(DEFAULT_RESPONSE), state
+            return turn_return(initial_sweep.prefered_dir_left, state, True)
+        # if within 90° turn towards prefered_dir
+        elif np.pi / 2 > sensor_data["yaw"] > -np.pi / 2:
+            return turn_return(initial_sweep.prefered_dir_left, state)
+        # if out of [-90;90] angle done
+        elif not initial_sweep.angle_done:
+            initial_sweep.angle_done = True
+            return list(DEFAULT_RESPONSE), state
+        else:
+            raise BrokenPipeError("Not supposed to be here in no_pink condition")
+
+    # trying to turn so that the centroids go to the middle of the screen.
+
+    # go to next state
+    return list(DEFAULT_RESPONSE), state +1
+
+def search_pink(sensor_data, camera_data, map):
+    state = StateEnum.SEARCH_PINK.value
 
     if MAP_DEBUG:
         cv2.imshow("map", map)
@@ -123,30 +155,9 @@ def search_pink(sensor_data, camera_data, map):
         nonlocal square_mask, stats, largest_component_label
         return not np.any(square_mask) or stats[largest_component_label, cv2.CC_STAT_AREA] <= AREA_THRESHOLD
 
-    if search_pink.angle_sweep_done:
-        print("hooray done")
-        return list(DEFAULT_RESPONSE), state
-
-    # the objective of this code is to SWEEP an angle to 90 back to 0 in order to feed map
-    if no_pink() and not search_pink.angle_sweep_done:
-        # if gove above 90° do this
-        if search_pink.angle_done:
-            if ((sensor_data["yaw"] > 0 and not search_pink.prefered_dir_left)
-                    or (sensor_data["yaw"] < 0 and search_pink.prefered_dir_left)):
-                search_pink.angle_sweep_done = True
-                return list(DEFAULT_RESPONSE), state
-            return turn_return(search_pink.prefered_dir_left, state, True)
-        # if within 90° turn towards prefered_dir
-        elif np.pi / 2 > sensor_data["yaw"] > -np.pi / 2:
-            return turn_return(search_pink.prefered_dir_left, state)
-        # if out of [-90;90] angle done
-        elif not search_pink.angle_done:
-            search_pink.angle_done = True
-        else:
-            raise BrokenPipeError("Not supposed to be here in no_pink condition")
-
-    # trying to turn so that the centroids go to the middle of the screen.
-    if largest_component_mask is not None:
+    if no_pink():
+        pass
+    else:
         # from centroid trying to get pink square in center
         centroid = measurements.center_of_mass(largest_component_mask)
 
@@ -156,13 +167,13 @@ def search_pink(sensor_data, camera_data, map):
         elif centroid[1] < len(camera_data) / 2 + 1 - CENTROID_THRESHOLD:
             return list(TURN_LEFT), state
 
-    # go to next state
-    return list(DEFAULT_RESPONSE), state +1
+    return list(DEFAULT_RESPONSE), state
+
 
 
 def go_to_pink(sensor_data, camera_data, map):
-    case = StateEnum.GO_TO_PINK.value
-    return list(GO_STRAIGHT), case
+    state = StateEnum.GO_TO_PINK.value
+    return list(GO_STRAIGHT), state
 
 
 def go_to_fz(sensor_data, camera_data, map):
@@ -195,6 +206,7 @@ def default_case(*args):
 
 
 FSM_DICO = {
+    StateEnum.INITIAL_SWEEP.value: initial_sweep,
     StateEnum.SEARCH_PINK.value: search_pink,
     StateEnum.GO_TO_PINK.value: go_to_pink,
     StateEnum.GO_TO_FZ.value: go_to_fz,
@@ -232,7 +244,7 @@ def get_command(sensor_data, camera_data, dt):
         return FSM_DICO.get(case, default_case)(sensor_data, camera_data, map)
 
     if not hasattr(get_command, "static_state"):
-        get_command.static_state = StateEnum.SEARCH_PINK.value
+        get_command.static_state = StateEnum.INITIAL_SWEEP.value
 
     # activate the FSM
     control_command, get_command.static_state = access_function(get_command.static_state)
