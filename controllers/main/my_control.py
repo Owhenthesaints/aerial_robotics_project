@@ -69,7 +69,8 @@ TURN_RIGHT = (0, 0, height_desired, -YAW_RATE)
 GO_STRAIGHT = (0.5, 0, height_desired, 0)
 GO_BACKWARDS = (-0.5, 0, height_desired, 0)
 GO_LEFT = (0, 1, height_desired, 0)
-GO_RIGHT = (0, 1, height_desired, 0)
+GO_RIGHT = (0, -1, height_desired, 0)
+GO_BACK_RIGHT = (-1, -1, height_desired, 0)
 MAP_LENGTH = 5
 MAP_WIDTH = 3
 MAP_THRESHOLD = 0.1
@@ -79,15 +80,28 @@ def divide_map(map):
     """
     divide the map 2s are free squares, 1s are occupied and 0s are unexplored
     """
-    map_copy = np.where(map > 0, 2, map)
+    map_func = map.copy()
+    map_copy = np.where(map > 0, 2, map_func)
     map_copy = np.where(map < 0, 1, map_copy)
-    return map_copy
+    # make sure that I am not modifying other map
+    return map_copy.copy()
 
-def get_map_scales(map):
+
+def get_map_scales(shape):
     """
+    for some obscure reason map stops at 15
     :return: scale
     """
-    return MAP_LENGTH/map.shape[0], MAP_WIDTH/map.shape[1]
+    return MAP_LENGTH / shape[0], MAP_LENGTH / shape[1]
+
+
+def get_position_on_map(shape: tuple, x_global: float, y_global: float):
+    """
+    the objective of this function is to get the equivalent position on map
+    shape 0 should be x
+    """
+    x_scale, y_scale = get_map_scales(shape)
+    return int(np.round(x_global / x_scale)), int(np.round(y_global / y_scale))
 
 
 def turn_return(left, state, reversed=False):
@@ -156,12 +170,29 @@ def go_to_middle(sensor_data, camera_data, map):
     the objective of this function is to get to the middle of the map
     """
     state = StateEnum.GO_TO_MIDDLE.value
-    return list(DEFAULT_RESPONSE), state
+    x_index, y_index = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
+    func_map = map.copy()
+    # only keep 15 first collumns
+    func_map = func_map[:,0:16]
+    func_map = divide_map(func_map)
+    func_map[x_index, y_index] = 5
+    # create a grid where only obstacles are forbidden
+    if sensor_data["range_front"]> 0.4:
+        return list(GO_STRAIGHT), state
+    else:
+        if sensor_data["range_left"]>0.4:
+            return list(GO_LEFT), state
+        else:
+            if sensor_data["range_right"]>0.4:
+                return list(GO_RIGHT), state
+            else:
+                return list(GO_BACK_RIGHT), state
+
 
 def search_pink(sensor_data, camera_data, map):
     state = StateEnum.SEARCH_PINK.value
     useable_map = divide_map(map)
-    scale_x, scale_y = get_map_scales(map)
+    scale_x, scale_y = get_map_scales(map.shape)
 
     def give_attribute(attr: str, value):
         if not hasattr(search_pink, attr):
@@ -214,28 +245,25 @@ def search_pink(sensor_data, camera_data, map):
                 # disallow 0
                 if index == 0:
                     continue
-                count = np.sum(row==2)
-                if count>largest_row_count:
+                count = np.sum(row == 2)
+                if count > largest_row_count:
                     largest_row_count = count
                     largest_row = index
             search_pink.line_objective = largest_row
         elif search_pink.line_objective is not None:
-            if search_pink.line_objective*scale_x > sensor_data["x_global"] - MAP_THRESHOLD:
+            if search_pink.line_objective * scale_x > sensor_data["x_global"] - MAP_THRESHOLD:
                 return list(GO_STRAIGHT), state
-            elif search_pink.line_objective*scale_x < sensor_data["x_global"]+MAP_THRESHOLD:
+            elif search_pink.line_objective * scale_x < sensor_data["x_global"] + MAP_THRESHOLD:
                 return list(GO_BACKWARDS), state
             else:
                 search_pink.optimal_line = True
 
-
-
-
-        #go towards that row
+        # go towards that row
     else:
         # from centroid trying to get pink square in center
         centroid = measurements.center_of_mass(largest_component_mask)
 
-        if len(camera_data)/2 +1- CENTROID_THRESHOLD > centroid[1] > len(camera_data) /2 +1 + CENTROID_THRESHOLD:
+        if len(camera_data) / 2 + 1 - CENTROID_THRESHOLD > centroid[1] > len(camera_data) / 2 + 1 + CENTROID_THRESHOLD:
             search_pink.camera_sweeping_done = True
         # if centroid to the right yaw right else yaw left until centroid in middle of screen
         if centroid[1] > len(camera_data) / 2 + 1 + CENTROID_THRESHOLD:

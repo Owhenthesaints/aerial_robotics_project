@@ -14,7 +14,7 @@ import cv2
 # seed 1 easy case
 # seed 2 extra simple
 INTERESTING_SEEDS = [0, 1, 2]
-SEED = 3
+SEED = 0
 
 exp_num = 3                     # 0: Coordinate Transformation, 1: PID Tuning, 2: Kalman Filter, 3: Practical
 control_style = 'autonomous'      # 'keyboard' or 'autonomous'
