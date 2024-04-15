@@ -16,8 +16,8 @@ THRESH_PINK = np.array([[140, 110, 110], [180, 255, 255]])
 
 
 # All available ground truth measurements can be accessed by calling sensor_data[item], where "item" can take the following values:
-# "x_global": Global X position
-# "y_global": Global Y position
+# "x_global": Global X position (front positive)
+# "y_global": Global Y position (left positive)
 # "z_global": Global Z position
 # "roll": Roll angle (rad)
 # "pitch": Pitch angle (rad)
@@ -45,13 +45,14 @@ THRESH_PINK = np.array([[140, 110, 110], [180, 255, 255]])
 # class implementation of the FSM
 class StateEnum(Enum):
     INITIAL_SWEEP = 0
-    SEARCH_PINK = 1
-    GO_TO_PINK = 2
-    GO_TO_FZ = 3
-    FIND_LANDING_PAD = 4
-    BACK_FIND_PINK = 5
-    BACK_TO_PINK = 6
-    BACK_TO_START = 7  # do not search LP just go to LP stored in beginning
+    GO_TO_MIDDLE = 1
+    SEARCH_PINK = 2
+    GO_TO_PINK = 3
+    GO_TO_FZ = 4
+    FIND_LANDING_PAD = 5
+    BACK_FIND_PINK = 6
+    BACK_TO_PINK = 7
+    BACK_TO_START = 8  # do not search LP just go to LP stored in beginning
 
 
 PINK_FILTER_DEBUG = False
@@ -60,12 +61,18 @@ DEFAULT_RESPONSE = (0, 0, height_desired, 0)
 LOCAL_AVOIDANCE_LR_THRESH = 0.5
 # in pixels
 CENTROID_THRESHOLD = 20
-YAW_RATE = 2
+YAW_RATE = 1
 # big area threshold so that we drone is forced to find full square not just side
 AREA_THRESHOLD = 500
 TURN_LEFT = (0, 0, height_desired, YAW_RATE)
 TURN_RIGHT = (0, 0, height_desired, -YAW_RATE)
-GO_STRAIGHT = (1, 0, height_desired, 0)
+GO_STRAIGHT = (0.5, 0, height_desired, 0)
+GO_BACKWARDS = (-0.5, 0, height_desired, 0)
+GO_LEFT = (0, 1, height_desired, 0)
+GO_RIGHT = (0, 1, height_desired, 0)
+MAP_LENGTH = 5
+MAP_WIDTH = 3
+MAP_THRESHOLD = 0.1
 
 
 def divide_map(map):
@@ -75,6 +82,12 @@ def divide_map(map):
     map_copy = np.where(map > 0, 2, map)
     map_copy = np.where(map < 0, 1, map_copy)
     return map_copy
+
+def get_map_scales(map):
+    """
+    :return: scale
+    """
+    return MAP_LENGTH/map.shape[0], MAP_WIDTH/map.shape[1]
 
 
 def turn_return(left, state, reversed=False):
@@ -138,15 +151,28 @@ def initial_sweep(sensor_data, camera_data, map):
     return list(DEFAULT_RESPONSE), state + 1
 
 
+def go_to_middle(sensor_data, camera_data, map):
+    """
+    the objective of this function is to get to the middle of the map
+    """
+    state = StateEnum.GO_TO_MIDDLE.value
+    return list(DEFAULT_RESPONSE), state
+
 def search_pink(sensor_data, camera_data, map):
     state = StateEnum.SEARCH_PINK.value
     useable_map = divide_map(map)
+    scale_x, scale_y = get_map_scales(map)
 
     def give_attribute(attr: str, value):
         if not hasattr(search_pink, attr):
             setattr(search_pink, attr, value)
 
     give_attribute("line_objective", None)
+    if sensor_data["y_global"] < 1.5:
+        give_attribute("prefered_dir_left", True)
+    else:
+        give_attribute("prefered_dir_left", False)
+    give_attribute("optimal_line", False)
 
     if MAP_DEBUG:
         cv2.imshow("map", map)
@@ -175,23 +201,42 @@ def search_pink(sensor_data, camera_data, map):
         return not np.any(square_mask) or stats[largest_component_label, cv2.CC_STAT_AREA] <= AREA_THRESHOLD
 
     if no_pink():
+        if search_pink.optimal_line:
+            if search_pink.prefered_dir_left:
+                return list(GO_LEFT), state
+            else:
+                return list(GO_RIGHT), state
         # find row with most freedom of movement
-        if search_pink.line_objective is None:
+        elif search_pink.line_objective is None:
             largest_row = 0
             largest_row_count = 0
             for index, row in enumerate(useable_map):
+                # disallow 0
+                if index == 0:
+                    continue
                 count = np.sum(row==2)
                 if count>largest_row_count:
                     largest_row_count = count
                     largest_row = index
             search_pink.line_objective = largest_row
-        print("line objective", search_pink.line_objective)
+        elif search_pink.line_objective is not None:
+            if search_pink.line_objective*scale_x > sensor_data["x_global"] - MAP_THRESHOLD:
+                return list(GO_STRAIGHT), state
+            elif search_pink.line_objective*scale_x < sensor_data["x_global"]+MAP_THRESHOLD:
+                return list(GO_BACKWARDS), state
+            else:
+                search_pink.optimal_line = True
+
+
+
 
         #go towards that row
     else:
         # from centroid trying to get pink square in center
         centroid = measurements.center_of_mass(largest_component_mask)
 
+        if len(camera_data)/2 +1- CENTROID_THRESHOLD > centroid[1] > len(camera_data) /2 +1 + CENTROID_THRESHOLD:
+            search_pink.camera_sweeping_done = True
         # if centroid to the right yaw right else yaw left until centroid in middle of screen
         if centroid[1] > len(camera_data) / 2 + 1 + CENTROID_THRESHOLD:
             return list(TURN_RIGHT), state
@@ -237,6 +282,7 @@ def default_case(*args):
 
 FSM_DICO = {
     StateEnum.INITIAL_SWEEP.value: initial_sweep,
+    StateEnum.GO_TO_MIDDLE.value: go_to_middle,
     StateEnum.SEARCH_PINK.value: search_pink,
     StateEnum.GO_TO_PINK.value: go_to_pink,
     StateEnum.GO_TO_FZ.value: go_to_fz,
