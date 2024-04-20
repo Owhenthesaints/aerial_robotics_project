@@ -1,9 +1,9 @@
 # Examples of basic methods for simulation competition
-import numpy as np
-import matplotlib.pyplot as plt
-import time
-import cv2
 from enum import Enum
+
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
 from scipy.ndimage import measurements
 
 # Global variables
@@ -175,18 +175,15 @@ def go_to_middle(sensor_data, camera_data, map):
     # only keep 15 first collumns
     func_map = func_map[:,0:16]
     func_map = divide_map(func_map)
-    func_map[x_index, y_index] = 5
     # create a grid where only obstacles are forbidden
-    if sensor_data["range_front"]> 0.4:
+    if not np.any(func_map[x_index:x_index + 3, y_index] == 1):
         return list(GO_STRAIGHT), state
+    elif not np.any(func_map[x_index, y_index:y_index + 2] == 1):
+        return list(GO_LEFT), state
+    elif not np.any(func_map[x_index, y_index -1:y_index + 1] == 1):
+        return list(GO_RIGHT), state
     else:
-        if sensor_data["range_left"]>0.4:
-            return list(GO_LEFT), state
-        else:
-            if sensor_data["range_right"]>0.4:
-                return list(GO_RIGHT), state
-            else:
-                return list(GO_BACK_RIGHT), state
+        return list(GO_BACK_RIGHT), state
 
 
 def search_pink(sensor_data, camera_data, map):
