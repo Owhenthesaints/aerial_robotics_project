@@ -61,15 +61,17 @@ DEFAULT_RESPONSE = (0, 0, height_desired, 0)
 LOCAL_AVOIDANCE_LR_THRESH = 0.5
 # in pixels
 CENTROID_THRESHOLD = 20
-YAW_RATE = 1
+YAW_RATE = 1.5
+#the threshold to get back to 0
+ZERO_THRESH = 0.21
 # big area threshold so that we drone is forced to find full square not just side
 AREA_THRESHOLD = 500
 TURN_LEFT = (0, 0, height_desired, YAW_RATE)
 TURN_RIGHT = (0, 0, height_desired, -YAW_RATE)
 GO_STRAIGHT = (0.5, 0, height_desired, 0)
 GO_BACKWARDS = (-0.5, 0, height_desired, 0)
-GO_LEFT = (0, 1, height_desired, 0)
-GO_RIGHT = (0, -1, height_desired, 0)
+GO_LEFT = (0, 0.5, height_desired, 0)
+GO_RIGHT = (0, -0.5, height_desired, 0)
 GO_BACK_RIGHT = (-1, -1, height_desired, 0)
 MAP_LENGTH = 5
 MAP_WIDTH = 3
@@ -85,6 +87,19 @@ def divide_map(map):
     map_copy = np.where(map < 0, 1, map_copy)
     # make sure that I am not modifying other map
     return map_copy.copy()
+
+def make_obstacles_bigger(div_map):
+    indices = np.argwhere(div_map==1)
+    for index in indices:
+        row, col = index
+        if col != 0 and col != len(div_map)-1:
+            div_map[row][col-1] = 1
+            div_map[row][col+1] = 1
+        elif col == 0:
+            div_map[row][col+1] = 1
+        elif col == len(div_map)-1:
+            div_map[row][col+1] = 1
+    return div_map
 
 
 def get_map_scales(shape):
@@ -121,7 +136,7 @@ def turn_return(left, state, reversed=False):
 
 
 # the point is to have a working map
-def initial_sweep(sensor_data, camera_data, map):
+def initial_sweep(sensor_data, camera_data, map, state):
     # init state and if done with state return state+1
     state = StateEnum.INITIAL_SWEEP.value
 
@@ -144,8 +159,8 @@ def initial_sweep(sensor_data, camera_data, map):
     if not initial_sweep.angle_sweep_done:
         # if gove above 90° do this
         if initial_sweep.angle_done:
-            if ((sensor_data["yaw"] > 0 and not initial_sweep.prefered_dir_left)
-                    or (sensor_data["yaw"] < 0 and initial_sweep.prefered_dir_left)):
+            if ((sensor_data["yaw"] > 0 - ZERO_THRESH and not initial_sweep.prefered_dir_left)
+                    or (sensor_data["yaw"] < 0 + ZERO_THRESH and initial_sweep.prefered_dir_left)):
                 initial_sweep.angle_sweep_done = True
                 return list(DEFAULT_RESPONSE), state
             return turn_return(initial_sweep.prefered_dir_left, state, True)
@@ -165,30 +180,46 @@ def initial_sweep(sensor_data, camera_data, map):
     return list(DEFAULT_RESPONSE), state + 1
 
 
-def go_to_middle(sensor_data, camera_data, map):
+def go_to_middle(sensor_data, camera_data, map, state):
     """
     the objective of this function is to get to the middle of the map
     """
-    state = StateEnum.GO_TO_MIDDLE.value
+    def give_attribute(attr: str, value):
+        if not hasattr(go_to_middle, attr):
+            setattr(go_to_middle, attr, value)
+
+    if sensor_data["y_global"] < 1.5:
+        give_attribute("preferred_dir_left", True)
+    else:
+        give_attribute("preferred_dir_left", False)
+
     x_index, y_index = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
     func_map = map.copy()
     # only keep 15 first collumns
-    func_map = func_map[:,0:16]
+    func_map = func_map[:, 0:16]
     func_map = divide_map(func_map)
+    func_map = make_obstacles_bigger(func_map)
     # create a grid where only obstacles are forbidden
-    if not np.any(func_map[x_index:x_index + 3, y_index] == 1):
-        return list(GO_STRAIGHT), state
-    elif not np.any(func_map[x_index, y_index:y_index + 2] == 1):
-        return list(GO_LEFT), state
-    elif not np.any(func_map[x_index, y_index -1:y_index + 1] == 1):
-        return list(GO_RIGHT), state
+    if go_to_middle.preferred_dir_left:
+        if not np.any(func_map[x_index:x_index + 3, y_index] == 1):
+            return list(GO_STRAIGHT), state
+        elif not np.any(func_map[x_index, y_index:y_index + 2] == 1):
+            return list(GO_LEFT), state
+        else:
+            return list(GO_BACKWARDS), state
     else:
-        return list(GO_BACK_RIGHT), state
+        if not np.any(func_map[x_index:x_index + 3, y_index] == 1):
+            return list(GO_STRAIGHT), state
+        elif not np.any(func_map[x_index, y_index - 1:y_index + 1] == 1):
+            return list(GO_RIGHT), state
+        else:
+            return list(GO_BACKWARDS), state
 
 
-def search_pink(sensor_data, camera_data, map):
+
+def search_pink(sensor_data, camera_data, map, state):
     state = StateEnum.SEARCH_PINK.value
-    useable_map = divide_map(map)
+    usable_map = divide_map(map)
     scale_x, scale_y = get_map_scales(map.shape)
 
     def give_attribute(attr: str, value):
@@ -238,7 +269,7 @@ def search_pink(sensor_data, camera_data, map):
         elif search_pink.line_objective is None:
             largest_row = 0
             largest_row_count = 0
-            for index, row in enumerate(useable_map):
+            for index, row in enumerate(usable_map):
                 # disallow 0
                 if index == 0:
                     continue
@@ -271,32 +302,32 @@ def search_pink(sensor_data, camera_data, map):
     return list(DEFAULT_RESPONSE), state
 
 
-def go_to_pink(sensor_data, camera_data, map):
+def go_to_pink(sensor_data, camera_data, map, state):
     state = StateEnum.GO_TO_PINK.value
     return list(GO_STRAIGHT), state
 
 
-def go_to_fz(sensor_data, camera_data, map):
+def go_to_fz(sensor_data, camera_data, map, state):
     case = StateEnum.GO_TO_FZ
     return list(DEFAULT_RESPONSE), case
 
 
-def find_landing_pad(sensor_data, camera_data, map):
+def find_landing_pad(sensor_data, camera_data, map, state):
     case = StateEnum.FIND_LANDING_PAD
     return list(DEFAULT_RESPONSE), case
 
 
-def back_find_pink(sensor_data, camera_data, map):
+def back_find_pink(sensor_data, camera_data, map, state):
     case = StateEnum.BACK_FIND_PINK
     return list(DEFAULT_RESPONSE), case
 
 
-def back_to_pink(sensor_data, camera_data, map):
+def back_to_pink(sensor_data, camera_data, map, state):
     case = StateEnum.BACK_TO_PINK
     return list(DEFAULT_RESPONSE), case
 
 
-def back_to_start(sensor_data, camera_data, map):
+def back_to_start(sensor_data, camera_data, map, state):
     case = StateEnum.BACK_TO_START
     return list(DEFAULT_RESPONSE), case
 
@@ -342,7 +373,7 @@ def get_command(sensor_data, camera_data, dt):
 
     def access_function(case):
         nonlocal sensor_data, camera_data
-        return FSM_DICO.get(case, default_case)(sensor_data, camera_data, map)
+        return FSM_DICO.get(case, default_case)(sensor_data, camera_data, map, case)
 
     if not hasattr(get_command, "static_state"):
         get_command.static_state = StateEnum.INITIAL_SWEEP.value
