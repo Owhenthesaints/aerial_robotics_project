@@ -240,15 +240,42 @@ def go_to_middle(sensor_data, camera_data, map, state):
     return go_to_line(sensor_data, camera_data, map, state, HALFWAY_LINE)
 
 
+def strafe_line(line, line_number, index_y) -> tuple[list, bool]:
+    """
+    returns response and Done
+    """
+
+    if not hasattr(strafe_line, "left"):
+        strafe_line.left = np.where(line == line_number)[0][-1]
+    if not hasattr(strafe_line, "right"):
+        strafe_line.right = np.argwhere(line == line_number)[0][0]
+    if not hasattr(strafe_line, "done_left"):
+        strafe_line.done_left = False
+
+    if strafe_line.done_left == True:
+        if strafe_line.right >= index_y:
+            return list(DEFAULT_RESPONSE), True
+        else:
+            return list(GO_RIGHT), False
+    else:
+        if strafe_line.left <= index_y:
+            strafe_line.done_left = True
+            return list(DEFAULT_RESPONSE), False
+        else:
+            return list(GO_LEFT), False
+
+
+
 def go_to_end_line(sensor_data, camera_data, map, state):
     return go_to_line(sensor_data, camera_data, map, state, END_LINE)
 
 
 def find_landing_pad(sensor_data, camera_data, map, state):
+    global lp_location
     # preprocess map
     func_map = make_map_functional(map)
-    index_x, index_y = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
-    func_map = func_map[index_x:, :]
+    x, y = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
+    func_map = func_map[x:, :]
 
     # create visit_map and mark everything around the map as visited
     if not hasattr(find_landing_pad, "visit_map"):
@@ -274,11 +301,19 @@ def find_landing_pad(sensor_data, camera_data, map, state):
                 else:
                     find_landing_pad.longest_lines[index_x, index_y] = counter
 
+    x -= map.shape[0] - func_map.shape[0]
+
     if sensor_data["z_global"] > LP_THRESH:
         lp_location = [sensor_data["x_global"], sensor_data["y_global"]]
         return list(DEFAULT_RESPONSE), state + 1
 
-    return list(DEFAULT_RESPONSE), state
+    instruction, done = strafe_line(find_landing_pad.longest_lines[x], 1, y)
+
+    if done:
+        return instruction, state+1
+    else:
+        return instruction, state
+
 
 
 def touchdown(sensor_data, camera_data, map, state):
