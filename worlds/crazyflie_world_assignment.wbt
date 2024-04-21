@@ -1,4 +1,4 @@
-#VRML_SIM R2023a utf8
+#VRML_SIM R2023b utf8
 
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/objects/backgrounds/protos/TexturedBackground.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/objects/floors/protos/Floor.proto"
@@ -27,16 +27,15 @@ Crazyflie {
   translation 0.9660470000000083 0.8372480000000008 0.12
   rotation 1.4432514312069223e-13 -7.094951043479413e-14 1 0.004202810932212425
   name "crazyflie"
-  controller "main"
+  controller "<extern>"
   supervisor TRUE
   extensionSlot [
     DEF CF_CAMERA Camera {
+      name "cf_camera"
+      fieldOfView 1.5
       width 300
       height 300
       near 0.2
-      fieldOfView 1.5
-      projection "planar"
-      name "cf_camera"
     }
     DistanceSensor {
       translation -0.0106777 -0.00872367 0.013
@@ -51,10 +50,6 @@ Crazyflie {
       aperture 0.005
     }
     Accelerometer {
-      xAxis TRUE
-      yAxis TRUE
-      zAxis TRUE
-      resolution -1
     }
   ]
 }
