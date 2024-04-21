@@ -3,6 +3,7 @@ from enum import Enum
 
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.signal import convolve2d
 
 # Global variables
 on_ground = True
@@ -120,13 +121,13 @@ def get_position_on_map(shape: tuple, x_global: float, y_global: float):
     x_scale, y_scale = get_map_scales(shape)
     return int(np.round(x_global / x_scale)), int(np.round(y_global / y_scale))
 
+
 def make_map_functional(map):
     """
     divide the map then size it
     """
     func_map = map[:, 0:16]
-    return divide_map(map)
-
+    return divide_map(func_map)
 
 
 def turn_return(left, state, reversed=False):
@@ -240,6 +241,23 @@ def go_to_end_line(sensor_data, camera_data, map, state):
 
 
 def find_landing_pad(sensor_data, camera_data, map, state):
+    # preprocess map
+    func_map = make_map_functional(map)
+    index_x, index_y = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
+    func_map = func_map[index_x:, :]
+
+    # create visit_map and mark everything around the map as visited
+    if not hasattr(find_landing_pad, "visit_map"):
+        kernel = np.ones((3, 3))
+        output_matrix = convolve2d(func_map == 1, kernel, mode='same', boundary='fill', fillvalue=0)
+        output_matrix[-1, :] = 1
+        output_matrix[:, -1] = 1
+        output_matrix[:, 0] = 1
+        find_landing_pad.visit_map = output_matrix > 0
+
+    find_landing_pad.visit_map[index_x, index_y] = True
+
+
     return list(DEFAULT_RESPONSE), state
 
 
