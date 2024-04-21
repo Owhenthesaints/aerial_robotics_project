@@ -12,6 +12,7 @@ timer = None
 startpos = None
 timer_done = None
 THRESH_PINK = np.array([[140, 110, 110], [180, 255, 255]])
+lp_location = None
 
 
 # All available ground truth measurements can be accessed by calling sensor_data[item], where "item" can take the following values:
@@ -49,9 +50,11 @@ class StateEnum(Enum):
     GO_TO_END_LINE = 3
     THIRD_SWEEP = 4
     FIND_LANDING_PAD = 5
-    BACK_FIND_PINK = 6
-    BACK_TO_PINK = 7
-    BACK_TO_START = 8  # do not search LP just go to LP stored in beginning
+    TOUCHDOWN = 6
+    TAKEOFF = 7
+    BACK_FIND_PINK = 8
+    BACK_TO_PINK = 9
+    BACK_TO_START = 10  # do not search LP just go to LP stored in beginning
 
 
 PINK_FILTER_DEBUG = False
@@ -78,6 +81,7 @@ MAP_THRESHOLD = 0.1
 # halfway point
 HALFWAY_LINE = 2.5
 END_LINE = 3.5
+LP_THRESH = 1.1
 
 
 def divide_map(map):
@@ -255,9 +259,30 @@ def find_landing_pad(sensor_data, camera_data, map, state):
         output_matrix[:, 0] = 1
         find_landing_pad.visit_map = output_matrix > 0
 
-    find_landing_pad.visit_map[index_x, index_y] = True
+    if not hasattr(find_landing_pad, "longest_lines"):
+        find_landing_pad.longest_lines = np.zeros(find_landing_pad.visit_map.shape)
+        for index_x, row in enumerate(find_landing_pad.visit_map):
+            counter = 0
+            for index_y, value in enumerate(row):
+                if find_landing_pad.visit_map[index_x, index_y] == True:
+                    if index_y == find_landing_pad.visit_map.shape[1] - 1:
+                        continue
+                    if not find_landing_pad.visit_map[index_x, index_y + 1] == True:
+                        counter += 1
+                    find_landing_pad.longest_lines[index_x, index_y] = 0
+                    continue
+                else:
+                    find_landing_pad.longest_lines[index_x, index_y] = counter
+
+    if sensor_data["z_global"] > LP_THRESH:
+        lp_location = [sensor_data["x_global"], sensor_data["y_global"]]
+        return list(DEFAULT_RESPONSE), state + 1
+
+    return list(DEFAULT_RESPONSE), state
 
 
+def touchdown(sensor_data, camera_data, map, state):
+    print("height: ", sensor_data["z_global"])
     return list(DEFAULT_RESPONSE), state
 
 
@@ -283,7 +308,8 @@ FSM_DICO = {
     StateEnum.SECOND_SWEEP.value: initial_sweep,
     StateEnum.GO_TO_END_LINE.value: go_to_end_line,
     StateEnum.THIRD_SWEEP.value: initial_sweep,
-    StateEnum.FIND_LANDING_PAD.value: find_landing_pad
+    StateEnum.FIND_LANDING_PAD.value: find_landing_pad,
+    StateEnum.TOUCHDOWN.value: touchdown
 }
 
 
