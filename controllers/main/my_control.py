@@ -45,12 +45,11 @@ class StateEnum(Enum):
     INITIAL_SWEEP = 0
     GO_TO_MIDDLE = 1
     SECOND_SWEEP = 2
-    GO_TO_PINK = 3
-    GO_TO_FZ = 4
-    FIND_LANDING_PAD = 5
-    BACK_FIND_PINK = 6
-    BACK_TO_PINK = 7
-    BACK_TO_START = 8  # do not search LP just go to LP stored in beginning
+    GO_TO_END_LINE = 3
+    FIND_LANDING_PAD = 4
+    BACK_FIND_PINK = 5
+    BACK_TO_PINK = 6
+    BACK_TO_START = 7  # do not search LP just go to LP stored in beginning
 
 
 PINK_FILTER_DEBUG = False
@@ -75,7 +74,8 @@ MAP_LENGTH = 5
 MAP_WIDTH = 3
 MAP_THRESHOLD = 0.1
 # halfway point
-HALFWAY_POINT = 2.5
+HALFWAY_LINE = 2.5
+END_LINE = 3.5
 
 
 def divide_map(map):
@@ -182,11 +182,7 @@ def initial_sweep(sensor_data, camera_data, map, state):
     return list(DEFAULT_RESPONSE), state + 1
 
 
-def go_to_middle(sensor_data, camera_data, map, state):
-    """
-    the objective of this function is to get to the middle of the map
-    """
-
+def go_to_line(sensor_data, camera_data, map, state, line):
     def give_attribute(attr: str, value):
         if not hasattr(go_to_middle, attr):
             setattr(go_to_middle, attr, value)
@@ -196,7 +192,7 @@ def go_to_middle(sensor_data, camera_data, map, state):
     else:
         give_attribute("preferred_dir_left", False)
 
-    if sensor_data["x_global"] > 2.5:
+    if sensor_data["x_global"] > line:
         return list(DEFAULT_RESPONSE), state + 1
 
     x_index, y_index = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
@@ -222,45 +218,46 @@ def go_to_middle(sensor_data, camera_data, map, state):
             return list(GO_BACKWARDS), state
 
 
+def go_to_middle(sensor_data, camera_data, map, state):
+    """
+    the objective of this function is to get to the middle of the map
+    """
+    return go_to_line(sensor_data, camera_data, map, state, HALFWAY_LINE)
+
+
+def go_to_end_line(sensor_data, camera_data, map, state):
+    return go_to_line(sensor_data, camera_data, map, state, END_LINE)
+
+
 def go_to_pink(sensor_data, camera_data, map, state):
     return list(DEFAULT_RESPONSE), state
 
 
-def go_to_fz(sensor_data, camera_data, map, state):
-    case = StateEnum.GO_TO_FZ
-    return list(DEFAULT_RESPONSE), case
-
-
 def find_landing_pad(sensor_data, camera_data, map, state):
-    case = StateEnum.FIND_LANDING_PAD
-    return list(DEFAULT_RESPONSE), case
+    return list(DEFAULT_RESPONSE), state
 
 
 def back_find_pink(sensor_data, camera_data, map, state):
-    case = StateEnum.BACK_FIND_PINK
-    return list(DEFAULT_RESPONSE), case
+    return list(DEFAULT_RESPONSE), state
 
 
 def back_to_pink(sensor_data, camera_data, map, state):
-    case = StateEnum.BACK_TO_PINK
-    return list(DEFAULT_RESPONSE), case
+    return list(DEFAULT_RESPONSE), state
 
 
 def back_to_start(sensor_data, camera_data, map, state):
-    case = StateEnum.BACK_TO_START
-    return list(DEFAULT_RESPONSE), case
+    return list(DEFAULT_RESPONSE), state
 
 
 def default_case(*args):
-    raise ValueError("state out of range")
+    raise ValueError("state out of range or not a state", args[3])
 
 
 FSM_DICO = {
     StateEnum.INITIAL_SWEEP.value: initial_sweep,
     StateEnum.GO_TO_MIDDLE.value: go_to_middle,
     StateEnum.SECOND_SWEEP.value: initial_sweep,
-    StateEnum.GO_TO_PINK.value: go_to_pink,
-    StateEnum.GO_TO_FZ.value: go_to_fz,
+    StateEnum.GO_TO_END_LINE.value: go_to_end_line,
     StateEnum.FIND_LANDING_PAD.value: find_landing_pad,
     StateEnum.BACK_FIND_PINK.value: back_find_pink,
     StateEnum.BACK_TO_PINK.value: back_to_pink,
