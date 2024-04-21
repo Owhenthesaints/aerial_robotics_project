@@ -60,7 +60,7 @@ LOCAL_AVOIDANCE_LR_THRESH = 0.5
 CENTROID_THRESHOLD = 20
 YAW_RATE = 1.5
 # the threshold to get back to 0
-ZERO_THRESH = 0.21
+ZERO_THRESH = 0.08
 # big area threshold so that we drone is forced to find full square not just side
 AREA_THRESHOLD = 500
 TURN_LEFT = (0, 0, height_desired, YAW_RATE)
@@ -151,8 +151,9 @@ def initial_sweep(sensor_data, camera_data, map, state):
     give_attribute("angle_sweep_done", False)
 
     if initial_sweep.angle_sweep_done:
-        initial_sweep.angle_sweep_done = False
-        initial_sweep.angle_done = False
+        del initial_sweep.angle_sweep_done
+        del initial_sweep.angle_done
+        del initial_sweep.prefered_dir_left
         return list(DEFAULT_RESPONSE), state + 1
 
     # the objective of this code is to SWEEP an angle to 90 back to 0 in order to feed map
@@ -177,8 +178,9 @@ def initial_sweep(sensor_data, camera_data, map, state):
     # trying to turn so that the centroids go to the middle of the screen.
 
     # go to next state
-    initial_sweep.angle_sweep_done = False
-    initial_sweep.angle_done = False
+    del initial_sweep.angle_sweep_done
+    del initial_sweep.angle_done
+    del initial_sweep.prefered_dir_left
     return list(DEFAULT_RESPONSE), state + 1
 
 
@@ -193,6 +195,7 @@ def go_to_line(sensor_data, camera_data, map, state, line):
         give_attribute("preferred_dir_left", False)
 
     if sensor_data["x_global"] > line:
+        del go_to_middle.preferred_dir_left
         return list(DEFAULT_RESPONSE), state + 1
 
     x_index, y_index = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
@@ -297,8 +300,6 @@ def get_command(sensor_data, camera_data, dt):
     # activate the FSM
     control_command, get_command.static_state = access_function(get_command.static_state)
     on_ground = False
-
-    print(sensor_data["x_global"], sensor_data["y_global"], sensor_data["z_global"])
     return control_command  # [vx, vy, alt, yaw_rate]
 
 
