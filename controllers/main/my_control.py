@@ -63,7 +63,7 @@ DEFAULT_RESPONSE = (0, 0, height_desired, 0)
 LOCAL_AVOIDANCE_LR_THRESH = 0.5
 # in pixels
 CENTROID_THRESHOLD = 20
-YAW_RATE = 1.5
+YAW_RATE = 1.53
 # the threshold to get back to 0
 ZERO_THRESH = 0.08
 # big area threshold so that we drone is forced to find full square not just side
@@ -73,14 +73,16 @@ TURN_RIGHT = (0, 0, height_desired, -YAW_RATE)
 GO_STRAIGHT = (0.5, 0, height_desired, 0)
 GO_BACKWARDS = (-0.5, 0, height_desired, 0)
 GO_LEFT = (0, 0.5, height_desired, 0)
+STRAFE_LEFT = (0, 0.25, height_desired, 0)
 GO_RIGHT = (0, -0.5, height_desired, 0)
+STRAFE_RIGHT = (0, -0.25, height_desired, 0)
 GO_BACK_RIGHT = (-1, -1, height_desired, 0)
 MAP_LENGTH = 5
 MAP_WIDTH = 3
 MAP_THRESHOLD = 0.1
 # halfway point
 HALFWAY_LINE = 2.5
-END_LINE = 3.5
+END_LINE = 3.7
 LP_THRESH = 1.1
 
 
@@ -240,6 +242,10 @@ def go_to_middle(sensor_data, camera_data, map, state):
     return go_to_line(sensor_data, camera_data, map, state, HALFWAY_LINE)
 
 
+def go_to_end_line(sensor_data, camera_data, map, state):
+    return go_to_line(sensor_data, camera_data, map, state, END_LINE)
+
+
 def strafe_line(line, line_number, index_y) -> tuple[list, bool]:
     """
     returns response and Done
@@ -256,18 +262,13 @@ def strafe_line(line, line_number, index_y) -> tuple[list, bool]:
         if strafe_line.right >= index_y:
             return list(DEFAULT_RESPONSE), True
         else:
-            return list(GO_RIGHT), False
+            return list(STRAFE_RIGHT), False
     else:
         if strafe_line.left <= index_y:
             strafe_line.done_left = True
             return list(DEFAULT_RESPONSE), False
         else:
-            return list(GO_LEFT), False
-
-
-
-def go_to_end_line(sensor_data, camera_data, map, state):
-    return go_to_line(sensor_data, camera_data, map, state, END_LINE)
+            return list(STRAFE_LEFT), False
 
 
 def find_landing_pad(sensor_data, camera_data, map, state):
