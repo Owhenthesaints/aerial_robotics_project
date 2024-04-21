@@ -46,10 +46,11 @@ class StateEnum(Enum):
     GO_TO_MIDDLE = 1
     SECOND_SWEEP = 2
     GO_TO_END_LINE = 3
-    FIND_LANDING_PAD = 4
-    BACK_FIND_PINK = 5
-    BACK_TO_PINK = 6
-    BACK_TO_START = 7  # do not search LP just go to LP stored in beginning
+    THIRD_SWEEP = 4
+    FIND_LANDING_PAD = 5
+    BACK_FIND_PINK = 6
+    BACK_TO_PINK = 7
+    BACK_TO_START = 8  # do not search LP just go to LP stored in beginning
 
 
 PINK_FILTER_DEBUG = False
@@ -118,6 +119,14 @@ def get_position_on_map(shape: tuple, x_global: float, y_global: float):
     """
     x_scale, y_scale = get_map_scales(shape)
     return int(np.round(x_global / x_scale)), int(np.round(y_global / y_scale))
+
+def make_map_functional(map):
+    """
+    divide the map then size it
+    """
+    func_map = map[:, 0:16]
+    return divide_map(map)
+
 
 
 def turn_return(left, state, reversed=False):
@@ -199,10 +208,8 @@ def go_to_line(sensor_data, camera_data, map, state, line):
         return list(DEFAULT_RESPONSE), state + 1
 
     x_index, y_index = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
-    func_map = map.copy()
     # only keep 15 first collumns
-    func_map = func_map[:, 0:16]
-    func_map = divide_map(func_map)
+    func_map = make_map_functional(map)
     func_map = make_obstacles_bigger(func_map)
     # create a grid where only obstacles are forbidden
     if go_to_middle.preferred_dir_left:
@@ -232,10 +239,6 @@ def go_to_end_line(sensor_data, camera_data, map, state):
     return go_to_line(sensor_data, camera_data, map, state, END_LINE)
 
 
-def go_to_pink(sensor_data, camera_data, map, state):
-    return list(DEFAULT_RESPONSE), state
-
-
 def find_landing_pad(sensor_data, camera_data, map, state):
     return list(DEFAULT_RESPONSE), state
 
@@ -261,10 +264,8 @@ FSM_DICO = {
     StateEnum.GO_TO_MIDDLE.value: go_to_middle,
     StateEnum.SECOND_SWEEP.value: initial_sweep,
     StateEnum.GO_TO_END_LINE.value: go_to_end_line,
-    StateEnum.FIND_LANDING_PAD.value: find_landing_pad,
-    StateEnum.BACK_FIND_PINK.value: back_find_pink,
-    StateEnum.BACK_TO_PINK.value: back_to_pink,
-    StateEnum.BACK_TO_START.value: back_to_start
+    StateEnum.THIRD_SWEEP.value: initial_sweep,
+    StateEnum.FIND_LANDING_PAD.value: find_landing_pad
 }
 
 
