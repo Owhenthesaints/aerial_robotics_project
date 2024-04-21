@@ -1,10 +1,8 @@
 # Examples of basic methods for simulation competition
 from enum import Enum
 
-import cv2
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.ndimage import measurements
 
 # Global variables
 on_ground = True
@@ -46,7 +44,7 @@ THRESH_PINK = np.array([[140, 110, 110], [180, 255, 255]])
 class StateEnum(Enum):
     INITIAL_SWEEP = 0
     GO_TO_MIDDLE = 1
-    SEARCH_PINK = 2
+    SECOND_SWEEP = 2
     GO_TO_PINK = 3
     GO_TO_FZ = 4
     FIND_LANDING_PAD = 5
@@ -62,7 +60,7 @@ LOCAL_AVOIDANCE_LR_THRESH = 0.5
 # in pixels
 CENTROID_THRESHOLD = 20
 YAW_RATE = 1.5
-#the threshold to get back to 0
+# the threshold to get back to 0
 ZERO_THRESH = 0.21
 # big area threshold so that we drone is forced to find full square not just side
 AREA_THRESHOLD = 500
@@ -76,6 +74,8 @@ GO_BACK_RIGHT = (-1, -1, height_desired, 0)
 MAP_LENGTH = 5
 MAP_WIDTH = 3
 MAP_THRESHOLD = 0.1
+# halfway point
+HALFWAY_POINT = 2.5
 
 
 def divide_map(map):
@@ -88,17 +88,18 @@ def divide_map(map):
     # make sure that I am not modifying other map
     return map_copy.copy()
 
+
 def make_obstacles_bigger(div_map):
-    indices = np.argwhere(div_map==1)
+    indices = np.argwhere(div_map == 1)
     for index in indices:
         row, col = index
-        if col != 0 and col != len(div_map)-1:
-            div_map[row][col-1] = 1
-            div_map[row][col+1] = 1
+        if col != 0 and col != len(div_map) - 1:
+            div_map[row][col - 1] = 1
+            div_map[row][col + 1] = 1
         elif col == 0:
-            div_map[row][col+1] = 1
-        elif col == len(div_map)-1:
-            div_map[row][col+1] = 1
+            div_map[row][col + 1] = 1
+        elif col == len(div_map) - 1:
+            div_map[row][col + 1] = 1
     return div_map
 
 
@@ -137,9 +138,6 @@ def turn_return(left, state, reversed=False):
 
 # the point is to have a working map
 def initial_sweep(sensor_data, camera_data, map, state):
-    # init state and if done with state return state+1
-    state = StateEnum.INITIAL_SWEEP.value
-
     # equivalent of static values C++
     def give_attribute(attr: str, value):
         if not hasattr(initial_sweep, attr):
@@ -153,6 +151,8 @@ def initial_sweep(sensor_data, camera_data, map, state):
     give_attribute("angle_sweep_done", False)
 
     if initial_sweep.angle_sweep_done:
+        initial_sweep.angle_sweep_done = False
+        initial_sweep.angle_done = False
         return list(DEFAULT_RESPONSE), state + 1
 
     # the objective of this code is to SWEEP an angle to 90 back to 0 in order to feed map
@@ -177,6 +177,8 @@ def initial_sweep(sensor_data, camera_data, map, state):
     # trying to turn so that the centroids go to the middle of the screen.
 
     # go to next state
+    initial_sweep.angle_sweep_done = False
+    initial_sweep.angle_done = False
     return list(DEFAULT_RESPONSE), state + 1
 
 
@@ -184,6 +186,7 @@ def go_to_middle(sensor_data, camera_data, map, state):
     """
     the objective of this function is to get to the middle of the map
     """
+
     def give_attribute(attr: str, value):
         if not hasattr(go_to_middle, attr):
             setattr(go_to_middle, attr, value)
@@ -192,6 +195,9 @@ def go_to_middle(sensor_data, camera_data, map, state):
         give_attribute("preferred_dir_left", True)
     else:
         give_attribute("preferred_dir_left", False)
+
+    if sensor_data["x_global"] > 2.5:
+        return list(DEFAULT_RESPONSE), state + 1
 
     x_index, y_index = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
     func_map = map.copy()
@@ -216,95 +222,8 @@ def go_to_middle(sensor_data, camera_data, map, state):
             return list(GO_BACKWARDS), state
 
 
-
-def search_pink(sensor_data, camera_data, map, state):
-    state = StateEnum.SEARCH_PINK.value
-    usable_map = divide_map(map)
-    scale_x, scale_y = get_map_scales(map.shape)
-
-    def give_attribute(attr: str, value):
-        if not hasattr(search_pink, attr):
-            setattr(search_pink, attr, value)
-
-    give_attribute("line_objective", None)
-    if sensor_data["y_global"] < 1.5:
-        give_attribute("prefered_dir_left", True)
-    else:
-        give_attribute("prefered_dir_left", False)
-    give_attribute("optimal_line", False)
-
-    if MAP_DEBUG:
-        cv2.imshow("map", map)
-        cv2.waitKey(1)
-
-    hsv = cv2.cvtColor(camera_data, cv2.COLOR_BGR2HSV)
-
-    # Threshold the HSV image to get only pink colors
-    square_mask = cv2.inRange(hsv, THRESH_PINK[0], THRESH_PINK[1])
-
-    # defining them outer scope
-    stats = largest_component_label = largest_component_mask = None
-
-    # if pink found in image find biggest component
-    if np.any(square_mask):
-        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(square_mask)
-        largest_component_label = np.argmax(stats[1:, cv2.CC_STAT_AREA]) + 1
-        largest_component_mask = np.uint8(labels == largest_component_label)
-        if PINK_FILTER_DEBUG and largest_component_mask is not None:
-            cv2.imshow('Camera Feed', largest_component_mask * 255)
-            cv2.waitKey(1)
-
-    # check whether pink square has been found
-    def no_pink():
-        nonlocal square_mask, stats, largest_component_label
-        return not np.any(square_mask) or stats[largest_component_label, cv2.CC_STAT_AREA] <= AREA_THRESHOLD
-
-    if no_pink():
-        if search_pink.optimal_line:
-            if search_pink.prefered_dir_left:
-                return list(GO_LEFT), state
-            else:
-                return list(GO_RIGHT), state
-        # find row with most freedom of movement
-        elif search_pink.line_objective is None:
-            largest_row = 0
-            largest_row_count = 0
-            for index, row in enumerate(usable_map):
-                # disallow 0
-                if index == 0:
-                    continue
-                count = np.sum(row == 2)
-                if count > largest_row_count:
-                    largest_row_count = count
-                    largest_row = index
-            search_pink.line_objective = largest_row
-        elif search_pink.line_objective is not None:
-            if search_pink.line_objective * scale_x > sensor_data["x_global"] - MAP_THRESHOLD:
-                return list(GO_STRAIGHT), state
-            elif search_pink.line_objective * scale_x < sensor_data["x_global"] + MAP_THRESHOLD:
-                return list(GO_BACKWARDS), state
-            else:
-                search_pink.optimal_line = True
-
-        # go towards that row
-    else:
-        # from centroid trying to get pink square in center
-        centroid = measurements.center_of_mass(largest_component_mask)
-
-        if len(camera_data) / 2 + 1 - CENTROID_THRESHOLD > centroid[1] > len(camera_data) / 2 + 1 + CENTROID_THRESHOLD:
-            search_pink.camera_sweeping_done = True
-        # if centroid to the right yaw right else yaw left until centroid in middle of screen
-        if centroid[1] > len(camera_data) / 2 + 1 + CENTROID_THRESHOLD:
-            return list(TURN_RIGHT), state
-        elif centroid[1] < len(camera_data) / 2 + 1 - CENTROID_THRESHOLD:
-            return list(TURN_LEFT), state
-
-    return list(DEFAULT_RESPONSE), state
-
-
 def go_to_pink(sensor_data, camera_data, map, state):
-    state = StateEnum.GO_TO_PINK.value
-    return list(GO_STRAIGHT), state
+    return list(DEFAULT_RESPONSE), state
 
 
 def go_to_fz(sensor_data, camera_data, map, state):
@@ -339,7 +258,7 @@ def default_case(*args):
 FSM_DICO = {
     StateEnum.INITIAL_SWEEP.value: initial_sweep,
     StateEnum.GO_TO_MIDDLE.value: go_to_middle,
-    StateEnum.SEARCH_PINK.value: search_pink,
+    StateEnum.SECOND_SWEEP.value: initial_sweep,
     StateEnum.GO_TO_PINK.value: go_to_pink,
     StateEnum.GO_TO_FZ.value: go_to_fz,
     StateEnum.FIND_LANDING_PAD.value: find_landing_pad,
@@ -380,7 +299,6 @@ def get_command(sensor_data, camera_data, dt):
 
     # activate the FSM
     control_command, get_command.static_state = access_function(get_command.static_state)
-
     on_ground = False
 
     print(sensor_data["x_global"], sensor_data["y_global"], sensor_data["z_global"])
