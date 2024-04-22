@@ -3,7 +3,6 @@ from enum import Enum
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.signal import convolve2d
 
 # Global variables
 on_ground = True
@@ -71,7 +70,9 @@ AREA_THRESHOLD = 500
 TURN_LEFT = (0, 0, height_desired, YAW_RATE)
 TURN_RIGHT = (0, 0, height_desired, -YAW_RATE)
 GO_STRAIGHT = (0.5, 0, height_desired, 0)
+LIGHT_FORWARDS = (0.1, 0, height_desired, 0)
 GO_BACKWARDS = (-0.5, 0, height_desired, 0)
+LIGHT_BACKWARDS = (-0.1, 0, height_desired, 0)
 GO_LEFT = (0, 0.5, height_desired, 0)
 STRAFE_LEFT = (0, 0.25, height_desired, 0)
 GO_RIGHT = (0, -0.5, height_desired, 0)
@@ -83,7 +84,7 @@ MAP_THRESHOLD = 0.1
 # halfway point
 HALFWAY_LINE = 2.5
 END_LINE = 3.7
-LP_THRESH = 1.1
+LP_THRESH = 1.5
 
 
 def divide_map(map):
@@ -108,7 +109,7 @@ def make_obstacles_bigger(div_map):
             div_map[row][col + 1] = 1
         elif col == len(div_map) - 1:
             div_map[row][col + 1] = 1
-    return div_map
+    return div_map.copy()
 
 
 def get_map_scales(shape):
@@ -274,47 +275,60 @@ def strafe_line(line, line_number, index_y) -> tuple[list, bool]:
 def find_landing_pad(sensor_data, camera_data, map, state):
     global lp_location
     # preprocess map
-    func_map = make_map_functional(map)
     x, y = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
-    func_map = func_map[x:, :]
 
-    # create visit_map and mark everything around the map as visited
-    if not hasattr(find_landing_pad, "visit_map"):
-        kernel = np.ones((3, 3))
-        output_matrix = convolve2d(func_map == 1, kernel, mode='same', boundary='fill', fillvalue=0)
-        output_matrix[-1, :] = 1
-        output_matrix[:, -1] = 1
-        output_matrix[:, 0] = 1
-        find_landing_pad.visit_map = output_matrix > 0
+    if not hasattr(find_landing_pad, "bo_map"):
+        func_map = make_map_functional(map)
+        func_map = func_map[x:, :]
+        obstacle_map = func_map == 1
+        big_obstacle_map = make_obstacles_bigger(obstacle_map)
+        find_landing_pad.bo_map = big_obstacle_map
 
-    if not hasattr(find_landing_pad, "longest_lines"):
-        find_landing_pad.longest_lines = np.zeros(find_landing_pad.visit_map.shape)
-        for index_x, row in enumerate(find_landing_pad.visit_map):
-            counter = 0
-            for index_y, value in enumerate(row):
-                if find_landing_pad.visit_map[index_x, index_y] == True:
-                    if index_y == find_landing_pad.visit_map.shape[1] - 1:
-                        continue
-                    if not find_landing_pad.visit_map[index_x, index_y + 1] == True:
-                        counter += 1
-                    find_landing_pad.longest_lines[index_x, index_y] = 0
-                    continue
-                else:
-                    find_landing_pad.longest_lines[index_x, index_y] = counter
-
-    x -= map.shape[0] - func_map.shape[0]
+    # transform x into the right shape for this array
+    x -= map.shape[0] - find_landing_pad.bo_map.shape[0]
+    # define the line we are working on
+    if not hasattr(find_landing_pad, "working_x"):
+        find_landing_pad.working_x = x
+    # define the direction we are going
+    if not hasattr(find_landing_pad, "left_done"):
+        find_landing_pad.left_done = False
 
     if sensor_data["z_global"] > LP_THRESH:
-        lp_location = [sensor_data["x_global"], sensor_data["y_global"]]
         return list(DEFAULT_RESPONSE), state + 1
 
-    instruction, done = strafe_line(find_landing_pad.longest_lines[x], 1, y)
+    # try to always be on the  the working_x
+    if x > find_landing_pad.working_x:
+        if not find_landing_pad.left_done:
+            if not np.any(find_landing_pad.bo_map[x - 1:x + 1, y + 1:y + 3]):
+                return list(LIGHT_BACKWARDS), state
+        else:
+            if not np.any(find_landing_pad.bo_map[x - 1:x + 1, y - 1]):
+                return list(LIGHT_BACKWARDS), state
 
-    if done:
-        return instruction, state+1
+    if x < find_landing_pad.working_x:
+        return list(LIGHT_FORWARDS), state
+
+    if not find_landing_pad.left_done:
+        if y == find_landing_pad.bo_map.shape[1] - 2:
+            find_landing_pad.left_done = True
+            return list(STRAFE_RIGHT), state
+        # if the map has nothing to the left
+        if not find_landing_pad.bo_map[x, y + 2]:
+            return list(STRAFE_LEFT), state
+
+        if find_landing_pad.bo_map[x, y + 2]:
+            return list(LIGHT_FORWARDS), state
     else:
-        return instruction, state
+        if y == 2:
+            del find_landing_pad.left_done
+            find_landing_pad.working_x += 1
+            return list(DEFAULT_RESPONSE), state
 
+        if not find_landing_pad.bo_map[x, y - 2]:
+            return list(STRAFE_RIGHT), state
+
+        if find_landing_pad.bo_map[x, y - 2]:
+            return list(LIGHT_FORWARDS), state
 
 
 def touchdown(sensor_data, camera_data, map, state):
