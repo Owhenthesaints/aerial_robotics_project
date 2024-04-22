@@ -84,7 +84,7 @@ MAP_THRESHOLD = 0.1
 # halfway point
 HALFWAY_LINE = 2.5
 END_LINE = 3.7
-LP_THRESH = 1.5
+LP_THRESH = 1.03
 
 
 def divide_map(map):
@@ -333,6 +333,13 @@ def find_landing_pad(sensor_data, camera_data, map, state):
 
 def touchdown(sensor_data, camera_data, map, state):
     print("height: ", sensor_data["z_global"])
+    if not hasattr(touchdown, "little_boost"):
+        touchdown.little_boost = False
+        return list(GO_STRAIGHT), state
+
+    if not touchdown.little_boost:
+        touchdown.little_boost = True
+        return list(GO_STRAIGHT), state
     return list(DEFAULT_RESPONSE), state
 
 
