@@ -78,6 +78,7 @@ STRAFE_LEFT = (0, 0.25, height_desired, 0)
 GO_RIGHT = (0, -0.5, height_desired, 0)
 STRAFE_RIGHT = (0, -0.25, height_desired, 0)
 GO_BACK_RIGHT = (-1, -1, height_desired, 0)
+LIGHT_LANDING = (0, 0, 0.3, 0)
 MAP_LENGTH = 5
 MAP_WIDTH = 3
 MAP_THRESHOLD = 0.1
@@ -85,6 +86,9 @@ MAP_THRESHOLD = 0.1
 HALFWAY_LINE = 2.5
 END_LINE = 3.7
 LP_THRESH = 1.03
+BOOST_TIME = 10
+LANDING_LINE = 0.3
+INCREMENT_LANDING = 0.2
 
 
 def divide_map(map):
@@ -334,13 +338,33 @@ def find_landing_pad(sensor_data, camera_data, map, state):
 def touchdown(sensor_data, camera_data, map, state):
     print("height: ", sensor_data["z_global"])
     if not hasattr(touchdown, "little_boost"):
-        touchdown.little_boost = False
+        touchdown.little_boost = 0
         return list(GO_STRAIGHT), state
 
-    if not touchdown.little_boost:
-        touchdown.little_boost = True
+    if not hasattr(touchdown, "gradual_z"):
+        touchdown.gradual_z = sensor_data["z_global"] - INCREMENT_LANDING
+
+    if not hasattr(touchdown, "landed"):
+        touchdown.landed = False
+
+    # little boost to get to middle of platform (based on strategy
+    if touchdown.little_boost <= BOOST_TIME:
+        touchdown.little_boost += 1
         return list(GO_STRAIGHT), state
-    return list(DEFAULT_RESPONSE), state
+
+    if touchdown.landed:
+        if sensor_data["range_down"] > height_desired - 0.05:
+            return list(DEFAULT_RESPONSE), state + 1
+        return list(DEFAULT_RESPONSE), state
+
+    if sensor_data["range_down"] < LANDING_LINE:
+        touchdown.landed = True
+        return list(DEFAULT_RESPONSE), state
+    if sensor_data["range_down"] > touchdown.gradual_z + 0.03:
+        return [0, 0, touchdown.gradual_z, 0], state
+    else:
+        touchdown.gradual_z -= INCREMENT_LANDING
+        return [0, 0, touchdown.gradual_z, 0], state
 
 
 def back_find_pink(sensor_data, camera_data, map, state):
