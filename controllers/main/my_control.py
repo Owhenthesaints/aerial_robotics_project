@@ -106,12 +106,12 @@ def make_obstacles_bigger(div_map):
     indices = np.argwhere(div_map == 1)
     for index in indices:
         row, col = index
-        if col != 0 and col != len(div_map) - 1:
+        if col != 0 and col < len(div_map) - 1:
             div_map[row][col - 1] = 1
             div_map[row][col + 1] = 1
-        elif col == 0:
+        elif col <= 0:
             div_map[row][col + 1] = 1
-        elif col == len(div_map) - 1:
+        elif col >= len(div_map) - 1:
             div_map[row][col + 1] = 1
     return div_map.copy()
 
