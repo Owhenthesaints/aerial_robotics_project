@@ -106,13 +106,13 @@ def make_obstacles_bigger(div_map):
     indices = np.argwhere(div_map == 1)
     for index in indices:
         row, col = index
-        if col != 0 and col < len(div_map) - 1:
+        if 0 < col < len(div_map[0]) - 1:
             div_map[row][col - 1] = 1
             div_map[row][col + 1] = 1
         elif col <= 0:
             div_map[row][col + 1] = 1
         elif col >= len(div_map) - 1:
-            div_map[row][col + 1] = 1
+            div_map[row][col - 1] = 1
     return div_map.copy()
 
 
@@ -290,8 +290,7 @@ def find_landing_pad(sensor_data, camera_data, map, state):
         find_landing_pad.x_init = x
     func_map = make_map_functional(map)
     func_map = func_map[find_landing_pad.x_init:, :]
-    obstacle_map = func_map == 1
-    big_obstacle_map = make_obstacles_bigger(obstacle_map)
+    big_obstacle_map = make_obstacles_bigger(func_map)
 
     # transform x into the right shape for this array
     x -= map.shape[0] - big_obstacle_map.shape[0]
