@@ -220,7 +220,6 @@ def go_to_line(sensor_data, camera_data, map, state, line):
     if sensor_data["y_global"] < 0.75 and not go_to_line.preferred_dir_left:
         go_to_line.preferred_dir_left = True
 
-
     if sensor_data["x_global"] > line:
         del go_to_line.preferred_dir_left
         return list(DEFAULT_RESPONSE), state + 1
@@ -309,10 +308,10 @@ def find_landing_pad(sensor_data, camera_data, map, state):
     # try to always be on the  the working_x
     if x > find_landing_pad.working_x:
         if not find_landing_pad.left_done:
-            if not np.any(find_landing_pad.bo_map[x - 1:x + 1, y + 1:y + 3]):
+            if not np.any(find_landing_pad.bo_map[x - 1:x + 1, y:y + 2]):
                 return list(LIGHT_BACKWARDS), state
         else:
-            if not np.any(find_landing_pad.bo_map[x - 1:x + 1, y - 1]):
+            if not np.any(find_landing_pad.bo_map[x - 1:x + 1, y - 1: y + 1]):
                 return list(LIGHT_BACKWARDS), state
 
     if x < find_landing_pad.working_x:
@@ -323,10 +322,10 @@ def find_landing_pad(sensor_data, camera_data, map, state):
             find_landing_pad.left_done = True
             return list(STRAFE_RIGHT), state
         # if the map has nothing to the left
-        if not find_landing_pad.bo_map[x, y + 2]:
+        if not find_landing_pad.bo_map[x, y + 1]:
             return list(STRAFE_LEFT), state
 
-        if find_landing_pad.bo_map[x, y + 2]:
+        if find_landing_pad.bo_map[x, y + 1]:
             return list(LIGHT_FORWARDS), state
     else:
         if y == 2:
@@ -334,10 +333,10 @@ def find_landing_pad(sensor_data, camera_data, map, state):
             find_landing_pad.working_x += 1
             return list(DEFAULT_RESPONSE), state
 
-        if not find_landing_pad.bo_map[x, y - 2]:
+        if not find_landing_pad.bo_map[x, y - 1]:
             return list(STRAFE_RIGHT), state
 
-        if find_landing_pad.bo_map[x, y - 2]:
+        if find_landing_pad.bo_map[x, y - 1]:
             return list(LIGHT_FORWARDS), state
 
 
