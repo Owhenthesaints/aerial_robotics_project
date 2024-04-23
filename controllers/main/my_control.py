@@ -3,6 +3,7 @@ from enum import Enum
 
 import matplotlib.pyplot as plt
 import numpy as np
+from utils import euler2rotmat
 
 # Global variables
 on_ground = True
@@ -89,6 +90,7 @@ LP_THRESH = 1.03
 BOOST_TIME = 10
 LANDING_LINE = 0.1
 INCREMENT_LANDING = 0.2
+UNBLOCKING_THRESH = 0.01
 
 
 def divide_map(map):
@@ -225,7 +227,7 @@ def go_to_line(sensor_data, camera_data, map, state, line):
         return list(DEFAULT_RESPONSE), state + 1
 
     x_index, y_index = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
-    # only keep 15 first collumns
+    # only keep 15 first columns
     func_map = make_map_functional(map)
     func_map = make_obstacles_bigger(func_map)
     # create a grid where only obstacles are forbidden
@@ -280,11 +282,18 @@ def strafe_line(line, line_number, index_y) -> tuple[list, bool]:
         else:
             return list(STRAFE_LEFT), False
 
+def make_straight(Vx, Vy, R):
+    R_copy = R.copy()
+    R_copy = R_copy[0:2, 0:2]
+    return R_copy[0][0] * Vx + R_copy[0][1] * Vy, R_copy[1][0] * Vx + R_copy[1][1] * Vy
+
 
 def find_landing_pad(sensor_data, camera_data, map, state):
     global lp_location
     # preprocess map
     x, y = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
+
+    R = euler2rotmat([sensor_data["roll"], sensor_data["pitch"], sensor_data["yaw"]])
 
     if not hasattr(find_landing_pad, "x_init"):
         find_landing_pad.x_init = x - 1
@@ -310,13 +319,18 @@ def find_landing_pad(sensor_data, camera_data, map, state):
     if x > find_landing_pad.working_x:
         if not find_landing_pad.left_done:
             if not np.any(big_obstacle_map[x - 2:x, y:y + 2]):
-                return list(LIGHT_BACKWARDS), state
+                vx, vy = make_straight(LIGHT_BACKWARDS[0], LIGHT_BACKWARDS[1], R)
+                vy += UNBLOCKING_THRESH
+                return [vx, vy, height_desired, 0], state
         else:
             if not np.any(big_obstacle_map[x - 2:x, y - 1: y + 1]):
-                return list(LIGHT_BACKWARDS), state
+                vx, vy = make_straight(LIGHT_BACKWARDS[0], LIGHT_BACKWARDS[1], R)
+                vy -= UNBLOCKING_THRESH
+                return [vx, vy, height_desired, 0], state
 
     if x < find_landing_pad.working_x:
-        return list(LIGHT_FORWARDS), state
+        vx, vy = make_straight(LIGHT_FORWARDS[0], LIGHT_FORWARDS[1], R)
+        return [vx, vy, height_desired, 0], state
 
     if not find_landing_pad.left_done:
         if y == big_obstacle_map.shape[1] - 2:
@@ -324,7 +338,9 @@ def find_landing_pad(sensor_data, camera_data, map, state):
             return list(STRAFE_RIGHT), state
         # if the map has nothing to the left
         if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > 0.1:
-            return list(LIGHT_FORWARDS), state
+            vx, vy = make_straight(LIGHT_FORWARDS[0], LIGHT_FORWARDS[1], R)
+            vy += UNBLOCKING_THRESH
+            return [vx, vy, height_desired, 0], state
         else:
             return list(STRAFE_LEFT), state
 
@@ -335,7 +351,9 @@ def find_landing_pad(sensor_data, camera_data, map, state):
             return list(DEFAULT_RESPONSE), state
 
         if np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1]) and sensor_data["range_front"] > 0.1:
-            return list(LIGHT_FORWARDS), state
+            vx, vy = make_straight(LIGHT_FORWARDS[0], LIGHT_FORWARDS[1], R)
+            vy -= UNBLOCKING_THRESH
+            return [vx, vy, height_desired, 0], state
         else:
             return list(STRAFE_RIGHT), state
 
@@ -351,11 +369,6 @@ def touchdown(sensor_data, camera_data, map, state):
 
     if not hasattr(touchdown, "landed"):
         touchdown.landed = False
-
-    # little boost to get to middle of platform (based on strategy
-    if touchdown.little_boost <= BOOST_TIME:
-        touchdown.little_boost += 1
-        return list(GO_STRAIGHT), state
 
     if touchdown.landed:
         if sensor_data["range_down"] > height_desired - 0.05:
