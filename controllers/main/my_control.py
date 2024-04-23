@@ -3,7 +3,6 @@ from enum import Enum
 
 import matplotlib.pyplot as plt
 import numpy as np
-from utils import euler2rotmat
 
 # Global variables
 on_ground = True
@@ -91,6 +90,30 @@ BOOST_TIME = 10
 LANDING_LINE = 0.1
 INCREMENT_LANDING = 0.2
 UNBLOCKING_THRESH = 0.01
+ZONE_LIMIT_THRESH = 4.90
+
+
+def euler2rotmat(euler_angles):
+    """
+    this is a function remade from the first exercise session
+    """
+    R = np.eye(3)
+
+    R_roll = np.array([[1, 0, 0],
+                       [0, np.cos(euler_angles[0]), -np.sin(euler_angles[0])],
+                       [0, np.sin(euler_angles[0]), np.cos(euler_angles[0])]])
+
+    R_pitch = np.array([[np.cos(euler_angles[1]), 0, np.sin(euler_angles[1])],
+                        [0, 1, 0],
+                        [-np.sin(euler_angles[1]), 0, np.cos(euler_angles[1])]])
+
+    R_yaw = np.array([[np.cos(euler_angles[2]), -np.sin(euler_angles[2]), 0],
+                      [np.sin(euler_angles[2]), np.cos(euler_angles[2]), 0],
+                      [0, 0, 1]])
+
+    R = R_yaw @ R_pitch @ R_roll
+
+    return R
 
 
 def divide_map(map):
@@ -282,6 +305,7 @@ def strafe_line(line, line_number, index_y) -> tuple[list, bool]:
         else:
             return list(STRAFE_LEFT), False
 
+
 def make_straight(Vx, Vy, R):
     R_copy = R.copy()
     R_copy = R_copy[0:2, 0:2]
@@ -338,6 +362,8 @@ def find_landing_pad(sensor_data, camera_data, map, state):
             return list(STRAFE_RIGHT), state
         # if the map has nothing to the left
         if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > 0.1:
+            if sensor_data["x_global"] > ZONE_LIMIT_THRESH:
+                return list(STRAFE_LEFT), state
             vx, vy = make_straight(LIGHT_FORWARDS[0], LIGHT_FORWARDS[1], R)
             vy += UNBLOCKING_THRESH
             return [vx, vy, height_desired, 0], state
@@ -351,6 +377,8 @@ def find_landing_pad(sensor_data, camera_data, map, state):
             return list(DEFAULT_RESPONSE), state
 
         if np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1]) and sensor_data["range_front"] > 0.1:
+            if sensor_data["x_global"] > ZONE_LIMIT_THRESH:
+                return list(STRAFE_RIGHT), state
             vx, vy = make_straight(LIGHT_FORWARDS[0], LIGHT_FORWARDS[1], R)
             vy -= UNBLOCKING_THRESH
             return [vx, vy, height_desired, 0], state
