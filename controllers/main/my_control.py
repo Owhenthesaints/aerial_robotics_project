@@ -207,16 +207,22 @@ def initial_sweep(sensor_data, camera_data, map, state):
 
 def go_to_line(sensor_data, camera_data, map, state, line):
     def give_attribute(attr: str, value):
-        if not hasattr(go_to_middle, attr):
-            setattr(go_to_middle, attr, value)
+        if not hasattr(go_to_line, attr):
+            setattr(go_to_line, attr, value)
 
     if sensor_data["y_global"] < 1.5:
         give_attribute("preferred_dir_left", True)
     else:
         give_attribute("preferred_dir_left", False)
 
+    if sensor_data["y_global"] > 2.25 and go_to_line.preferred_dir_left:
+        go_to_line.preferred_dir_left = False
+    if sensor_data["y_global"] < 0.75 and not go_to_line.preferred_dir_left:
+        go_to_line.preferred_dir_left = True
+
+
     if sensor_data["x_global"] > line:
-        del go_to_middle.preferred_dir_left
+        del go_to_line.preferred_dir_left
         return list(DEFAULT_RESPONSE), state + 1
 
     x_index, y_index = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
@@ -224,7 +230,7 @@ def go_to_line(sensor_data, camera_data, map, state, line):
     func_map = make_map_functional(map)
     func_map = make_obstacles_bigger(func_map)
     # create a grid where only obstacles are forbidden
-    if go_to_middle.preferred_dir_left:
+    if go_to_line.preferred_dir_left:
         if not np.any(func_map[x_index:x_index + 3, y_index] == 1):
             return list(GO_STRAIGHT), state
         elif not np.any(func_map[x_index, y_index:y_index + 2] == 1):
