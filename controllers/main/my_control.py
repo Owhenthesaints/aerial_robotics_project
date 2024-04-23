@@ -87,7 +87,7 @@ HALFWAY_LINE = 2.5
 END_LINE = 3.7
 LP_THRESH = 1.03
 BOOST_TIME = 10
-LANDING_LINE = 0.3
+LANDING_LINE = 0.1
 INCREMENT_LANDING = 0.2
 
 
@@ -286,15 +286,15 @@ def find_landing_pad(sensor_data, camera_data, map, state):
     # preprocess map
     x, y = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
 
-    if not hasattr(find_landing_pad, "bo_map"):
-        func_map = make_map_functional(map)
-        func_map = func_map[x:, :]
-        obstacle_map = func_map == 1
-        big_obstacle_map = make_obstacles_bigger(obstacle_map)
-        find_landing_pad.bo_map = big_obstacle_map
+    if not hasattr(find_landing_pad, "x_init"):
+        find_landing_pad.x_init = x
+    func_map = make_map_functional(map)
+    func_map = func_map[find_landing_pad.x_init:, :]
+    obstacle_map = func_map == 1
+    big_obstacle_map = make_obstacles_bigger(obstacle_map)
 
     # transform x into the right shape for this array
-    x -= map.shape[0] - find_landing_pad.bo_map.shape[0]
+    x -= map.shape[0] - big_obstacle_map.shape[0]
     # define the line we are working on
     if not hasattr(find_landing_pad, "working_x"):
         find_landing_pad.working_x = x
@@ -308,24 +308,24 @@ def find_landing_pad(sensor_data, camera_data, map, state):
     # try to always be on the  the working_x
     if x > find_landing_pad.working_x:
         if not find_landing_pad.left_done:
-            if not np.any(find_landing_pad.bo_map[x - 1:x + 1, y:y + 2]):
+            if not np.any(big_obstacle_map[x - 1:x + 1, y:y + 2]):  # have to test making square bigger in x
                 return list(LIGHT_BACKWARDS), state
         else:
-            if not np.any(find_landing_pad.bo_map[x - 1:x + 1, y - 1: y + 1]):
+            if not np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1]):  # have to test make square bigger in x
                 return list(LIGHT_BACKWARDS), state
 
     if x < find_landing_pad.working_x:
         return list(LIGHT_FORWARDS), state
 
     if not find_landing_pad.left_done:
-        if y == find_landing_pad.bo_map.shape[1] - 2:
+        if y == big_obstacle_map.shape[1] - 2:
             find_landing_pad.left_done = True
             return list(STRAFE_RIGHT), state
         # if the map has nothing to the left
-        if not find_landing_pad.bo_map[x, y + 1]:
+        if not big_obstacle_map[x, y + 1]:
             return list(STRAFE_LEFT), state
 
-        if find_landing_pad.bo_map[x, y + 1]:
+        if big_obstacle_map[x, y + 1]:
             return list(LIGHT_FORWARDS), state
     else:
         if y == 2:
@@ -333,10 +333,10 @@ def find_landing_pad(sensor_data, camera_data, map, state):
             find_landing_pad.working_x += 1
             return list(DEFAULT_RESPONSE), state
 
-        if not find_landing_pad.bo_map[x, y - 1]:
+        if not big_obstacle_map[x, y - 1]:
             return list(STRAFE_RIGHT), state
 
-        if find_landing_pad.bo_map[x, y - 1]:
+        if big_obstacle_map[x, y - 1]:
             return list(LIGHT_FORWARDS), state
 
 
