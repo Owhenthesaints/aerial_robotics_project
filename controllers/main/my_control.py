@@ -111,7 +111,7 @@ def make_obstacles_bigger(div_map):
             div_map[row][col + 1] = 1
         elif col <= 0:
             div_map[row][col + 1] = 1
-        elif col >= len(div_map) - 1:
+        elif col >= len(div_map[0]) - 1:
             div_map[row][col - 1] = 1
     return div_map.copy()
 
@@ -288,9 +288,11 @@ def find_landing_pad(sensor_data, camera_data, map, state):
 
     if not hasattr(find_landing_pad, "x_init"):
         find_landing_pad.x_init = x
+
     func_map = make_map_functional(map)
     func_map = func_map[find_landing_pad.x_init:, :]
     big_obstacle_map = make_obstacles_bigger(func_map)
+    big_obstacle_map = big_obstacle_map == 1
 
     # transform x into the right shape for this array
     x -= map.shape[0] - big_obstacle_map.shape[0]
