@@ -287,7 +287,7 @@ def find_landing_pad(sensor_data, camera_data, map, state):
     x, y = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
 
     if not hasattr(find_landing_pad, "x_init"):
-        find_landing_pad.x_init = x
+        find_landing_pad.x_init = x - 1
 
     func_map = make_map_functional(map)
     func_map = func_map[find_landing_pad.x_init:, :]
@@ -309,10 +309,10 @@ def find_landing_pad(sensor_data, camera_data, map, state):
     # try to always be on the  the working_x
     if x > find_landing_pad.working_x:
         if not find_landing_pad.left_done:
-            if not np.any(big_obstacle_map[x - 1:x + 1, y:y + 2]):  # have to test making square bigger in x
+            if not np.any(big_obstacle_map[x - 2:x, y:y + 2]):
                 return list(LIGHT_BACKWARDS), state
         else:
-            if not np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1]):  # have to test make square bigger in x
+            if not np.any(big_obstacle_map[x - 2:x, y - 1: y + 1]):
                 return list(LIGHT_BACKWARDS), state
 
     if x < find_landing_pad.working_x:
@@ -323,22 +323,21 @@ def find_landing_pad(sensor_data, camera_data, map, state):
             find_landing_pad.left_done = True
             return list(STRAFE_RIGHT), state
         # if the map has nothing to the left
-        if not big_obstacle_map[x, y + 1]:
+        if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > 0.1:
+            return list(LIGHT_FORWARDS), state
+        else:
             return list(STRAFE_LEFT), state
 
-        if big_obstacle_map[x, y + 1]:
-            return list(LIGHT_FORWARDS), state
     else:
         if y == 2:
             del find_landing_pad.left_done
             find_landing_pad.working_x += 1
             return list(DEFAULT_RESPONSE), state
 
-        if not big_obstacle_map[x, y - 1]:
-            return list(STRAFE_RIGHT), state
-
-        if big_obstacle_map[x, y - 1]:
+        if np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1]) and sensor_data["range_front"] > 0.1:
             return list(LIGHT_FORWARDS), state
+        else:
+            return list(STRAFE_RIGHT), state
 
 
 def touchdown(sensor_data, camera_data, map, state):
