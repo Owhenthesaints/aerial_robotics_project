@@ -78,6 +78,7 @@ STRAFE_LEFT = (0, 0.25, height_desired, 0)
 GO_RIGHT = (0, -0.5, height_desired, 0)
 STRAFE_RIGHT = (0, -0.25, height_desired, 0)
 GO_BACK_RIGHT = (-1, -1, height_desired, 0)
+LIGHT_LANDING = (0, 0, 0.3, 0)
 MAP_LENGTH = 5
 MAP_WIDTH = 3
 MAP_THRESHOLD = 0.1
@@ -85,6 +86,34 @@ MAP_THRESHOLD = 0.1
 HALFWAY_LINE = 2.5
 END_LINE = 3.7
 LP_THRESH = 1.03
+BOOST_TIME = 10
+LANDING_LINE = 0.1
+INCREMENT_LANDING = 0.2
+UNBLOCKING_THRESH = 0.01
+ZONE_LIMIT_THRESH = 4.90
+
+
+def euler2rotmat(euler_angles):
+    """
+    this is a function remade from the first exercise session
+    """
+    R = np.eye(3)
+
+    R_roll = np.array([[1, 0, 0],
+                       [0, np.cos(euler_angles[0]), -np.sin(euler_angles[0])],
+                       [0, np.sin(euler_angles[0]), np.cos(euler_angles[0])]])
+
+    R_pitch = np.array([[np.cos(euler_angles[1]), 0, np.sin(euler_angles[1])],
+                        [0, 1, 0],
+                        [-np.sin(euler_angles[1]), 0, np.cos(euler_angles[1])]])
+
+    R_yaw = np.array([[np.cos(euler_angles[2]), -np.sin(euler_angles[2]), 0],
+                      [np.sin(euler_angles[2]), np.cos(euler_angles[2]), 0],
+                      [0, 0, 1]])
+
+    R = R_yaw @ R_pitch @ R_roll
+
+    return R
 
 
 def divide_map(map):
@@ -102,13 +131,13 @@ def make_obstacles_bigger(div_map):
     indices = np.argwhere(div_map == 1)
     for index in indices:
         row, col = index
-        if col != 0 and col != len(div_map) - 1:
+        if 0 < col < len(div_map[0]) - 1:
             div_map[row][col - 1] = 1
             div_map[row][col + 1] = 1
-        elif col == 0:
+        elif col <= 0:
             div_map[row][col + 1] = 1
-        elif col == len(div_map) - 1:
-            div_map[row][col + 1] = 1
+        elif col >= len(div_map[0]) - 1:
+            div_map[row][col - 1] = 1
     return div_map.copy()
 
 
@@ -203,24 +232,29 @@ def initial_sweep(sensor_data, camera_data, map, state):
 
 def go_to_line(sensor_data, camera_data, map, state, line):
     def give_attribute(attr: str, value):
-        if not hasattr(go_to_middle, attr):
-            setattr(go_to_middle, attr, value)
+        if not hasattr(go_to_line, attr):
+            setattr(go_to_line, attr, value)
 
     if sensor_data["y_global"] < 1.5:
         give_attribute("preferred_dir_left", True)
     else:
         give_attribute("preferred_dir_left", False)
 
+    if sensor_data["y_global"] > 2.25 and go_to_line.preferred_dir_left:
+        go_to_line.preferred_dir_left = False
+    if sensor_data["y_global"] < 0.75 and not go_to_line.preferred_dir_left:
+        go_to_line.preferred_dir_left = True
+
     if sensor_data["x_global"] > line:
-        del go_to_middle.preferred_dir_left
+        del go_to_line.preferred_dir_left
         return list(DEFAULT_RESPONSE), state + 1
 
     x_index, y_index = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
-    # only keep 15 first collumns
+    # only keep 15 first columns
     func_map = make_map_functional(map)
     func_map = make_obstacles_bigger(func_map)
     # create a grid where only obstacles are forbidden
-    if go_to_middle.preferred_dir_left:
+    if go_to_line.preferred_dir_left:
         if not np.any(func_map[x_index:x_index + 3, y_index] == 1):
             return list(GO_STRAIGHT), state
         elif not np.any(func_map[x_index, y_index:y_index + 2] == 1):
@@ -272,20 +306,29 @@ def strafe_line(line, line_number, index_y) -> tuple[list, bool]:
             return list(STRAFE_LEFT), False
 
 
+def make_straight(Vx, Vy, R):
+    R_copy = R.copy()
+    R_copy = R_copy[0:2, 0:2]
+    return R_copy[0][0] * Vx + R_copy[0][1] * Vy, R_copy[1][0] * Vx + R_copy[1][1] * Vy
+
+
 def find_landing_pad(sensor_data, camera_data, map, state):
     global lp_location
     # preprocess map
     x, y = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
 
-    if not hasattr(find_landing_pad, "bo_map"):
-        func_map = make_map_functional(map)
-        func_map = func_map[x:, :]
-        obstacle_map = func_map == 1
-        big_obstacle_map = make_obstacles_bigger(obstacle_map)
-        find_landing_pad.bo_map = big_obstacle_map
+    R = euler2rotmat([sensor_data["roll"], sensor_data["pitch"], sensor_data["yaw"]])
+
+    if not hasattr(find_landing_pad, "x_init"):
+        find_landing_pad.x_init = x - 1
+
+    func_map = make_map_functional(map)
+    func_map = func_map[find_landing_pad.x_init:, :]
+    big_obstacle_map = make_obstacles_bigger(func_map)
+    big_obstacle_map = big_obstacle_map == 1
 
     # transform x into the right shape for this array
-    x -= map.shape[0] - find_landing_pad.bo_map.shape[0]
+    x -= map.shape[0] - big_obstacle_map.shape[0]
     # define the line we are working on
     if not hasattr(find_landing_pad, "working_x"):
         find_landing_pad.working_x = x
@@ -299,48 +342,75 @@ def find_landing_pad(sensor_data, camera_data, map, state):
     # try to always be on the  the working_x
     if x > find_landing_pad.working_x:
         if not find_landing_pad.left_done:
-            if not np.any(find_landing_pad.bo_map[x - 1:x + 1, y + 1:y + 3]):
-                return list(LIGHT_BACKWARDS), state
+            if not np.any(big_obstacle_map[x - 2:x, y:y + 2]):
+                vx, vy = make_straight(LIGHT_BACKWARDS[0], LIGHT_BACKWARDS[1], R)
+                vy += UNBLOCKING_THRESH
+                return [vx, vy, height_desired, 0], state
         else:
-            if not np.any(find_landing_pad.bo_map[x - 1:x + 1, y - 1]):
-                return list(LIGHT_BACKWARDS), state
+            if not np.any(big_obstacle_map[x - 2:x, y - 1: y + 1]):
+                vx, vy = make_straight(LIGHT_BACKWARDS[0], LIGHT_BACKWARDS[1], R)
+                vy -= UNBLOCKING_THRESH
+                return [vx, vy, height_desired, 0], state
 
     if x < find_landing_pad.working_x:
-        return list(LIGHT_FORWARDS), state
+        vx, vy = make_straight(LIGHT_FORWARDS[0], LIGHT_FORWARDS[1], R)
+        return [vx, vy, height_desired, 0], state
 
     if not find_landing_pad.left_done:
-        if y == find_landing_pad.bo_map.shape[1] - 2:
+        if y == big_obstacle_map.shape[1] - 2:
             find_landing_pad.left_done = True
             return list(STRAFE_RIGHT), state
         # if the map has nothing to the left
-        if not find_landing_pad.bo_map[x, y + 2]:
+        if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > 0.1:
+            if sensor_data["x_global"] > ZONE_LIMIT_THRESH:
+                return list(STRAFE_LEFT), state
+            vx, vy = make_straight(LIGHT_FORWARDS[0], LIGHT_FORWARDS[1], R)
+            vy += UNBLOCKING_THRESH
+            return [vx, vy, height_desired, 0], state
+        else:
             return list(STRAFE_LEFT), state
 
-        if find_landing_pad.bo_map[x, y + 2]:
-            return list(LIGHT_FORWARDS), state
     else:
         if y == 2:
             del find_landing_pad.left_done
             find_landing_pad.working_x += 1
             return list(DEFAULT_RESPONSE), state
 
-        if not find_landing_pad.bo_map[x, y - 2]:
+        if np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1]) and sensor_data["range_front"] > 0.1:
+            if sensor_data["x_global"] > ZONE_LIMIT_THRESH:
+                return list(STRAFE_RIGHT), state
+            vx, vy = make_straight(LIGHT_FORWARDS[0], LIGHT_FORWARDS[1], R)
+            vy -= UNBLOCKING_THRESH
+            return [vx, vy, height_desired, 0], state
+        else:
             return list(STRAFE_RIGHT), state
-
-        if find_landing_pad.bo_map[x, y - 2]:
-            return list(LIGHT_FORWARDS), state
 
 
 def touchdown(sensor_data, camera_data, map, state):
     print("height: ", sensor_data["z_global"])
     if not hasattr(touchdown, "little_boost"):
-        touchdown.little_boost = False
+        touchdown.little_boost = 0
         return list(GO_STRAIGHT), state
 
-    if not touchdown.little_boost:
-        touchdown.little_boost = True
-        return list(GO_STRAIGHT), state
-    return list(DEFAULT_RESPONSE), state
+    if not hasattr(touchdown, "gradual_z"):
+        touchdown.gradual_z = sensor_data["z_global"] - INCREMENT_LANDING
+
+    if not hasattr(touchdown, "landed"):
+        touchdown.landed = False
+
+    if touchdown.landed:
+        if sensor_data["range_down"] > height_desired - 0.05:
+            return list(DEFAULT_RESPONSE), state + 1
+        return list(DEFAULT_RESPONSE), state
+
+    if sensor_data["range_down"] < LANDING_LINE:
+        touchdown.landed = True
+        return list(DEFAULT_RESPONSE), state
+    if sensor_data["range_down"] > touchdown.gradual_z + 0.03:
+        return [0, 0, touchdown.gradual_z, 0], state
+    else:
+        touchdown.gradual_z -= INCREMENT_LANDING
+        return [0, 0, touchdown.gradual_z, 0], state
 
 
 def back_find_pink(sensor_data, camera_data, map, state):
