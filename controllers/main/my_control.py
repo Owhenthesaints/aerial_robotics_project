@@ -52,6 +52,8 @@ class StateEnum(Enum):
     TOUCHDOWN = 6
     TURN_180 = 7
     GO_TO_MIDDLE_BACK = 8
+    READJUST = 9
+    GO_TO_END_BACK = 10
 
 
 PINK_FILTER_DEBUG = False
@@ -165,34 +167,34 @@ def initial_sweep(sensor_data, camera_data, map, state):
             setattr(initial_sweep, attr, value)
 
     if sensor_data["y_global"] < 1.5:
-        give_attribute("prefered_dir_left", True)
+        give_attribute("preferred_dir_left", True)
     else:
-        give_attribute("prefered_dir_left", False)
+        give_attribute("preferred_dir_left", False)
     give_attribute("angle_done", False)
     give_attribute("angle_sweep_done", False)
 
     if initial_sweep.angle_sweep_done:
         del initial_sweep.angle_sweep_done
         del initial_sweep.angle_done
-        del initial_sweep.prefered_dir_left
+        del initial_sweep.preferred_dir_left
         return list(DEFAULT_RESPONSE), state + 1
 
     # the objective of this code is to SWEEP an angle to 90 back to 0 in order to feed map
     if not initial_sweep.angle_sweep_done:
         # if gove above 90° do this
         if initial_sweep.angle_done:
-            if ((sensor_data["yaw"] > 0 - ZERO_THRESH and not initial_sweep.prefered_dir_left)
-                    or (sensor_data["yaw"] < 0 + ZERO_THRESH and initial_sweep.prefered_dir_left)):
+            if ((sensor_data["yaw"] > 0 - ZERO_THRESH and not initial_sweep.preferred_dir_left)
+                    or (sensor_data["yaw"] < 0 + ZERO_THRESH and initial_sweep.preferred_dir_left)):
                 initial_sweep.angle_sweep_done = True
                 return list(DEFAULT_RESPONSE), state
-            return turn_return(initial_sweep.prefered_dir_left, state, True)
+            return turn_return(initial_sweep.preferred_dir_left, state, True)
         # if within 90° turn towards prefered_dir
         elif np.pi / 2 > sensor_data["yaw"] > -np.pi / 2:
-            return turn_return(initial_sweep.prefered_dir_left, state)
+            return turn_return(initial_sweep.preferred_dir_left, state)
         # if out of [-90;90] angle done
         elif not initial_sweep.angle_done:
             initial_sweep.angle_done = True
-            return turn_return(initial_sweep.prefered_dir_left, state, True)
+            return turn_return(initial_sweep.preferred_dir_left, state, True)
         else:
             raise BrokenPipeError("Not supposed to be here in no_pink condition")
 
@@ -201,7 +203,7 @@ def initial_sweep(sensor_data, camera_data, map, state):
     # go to next state
     del initial_sweep.angle_sweep_done
     del initial_sweep.angle_done
-    del initial_sweep.prefered_dir_left
+    del initial_sweep.preferred_dir_left
     return list(DEFAULT_RESPONSE), state + 1
 
 
@@ -421,6 +423,20 @@ def go_to_middle_back(sensor_data, camera_data, map, state):
     return go_to_line(sensor_data, camera_data, reversed_map, state, 2.5, True)
 
 
+def readjust(sensor_data, camera_data, map, state):
+    if sensor_data["yaw"] < np.pi - ZERO_THRESH:
+        return TURN_RIGHT, state
+    else:
+        return DEFAULT_RESPONSE, state + 1
+
+
+def go_to_end_line_back(sensor_data, camera_data, map, state):
+    global startpos
+    map_copy = map.copy()
+    reversed_map = np.concatenate((np.flip(map_copy[:, :16]), map_copy[:, 16:]), axis=1)
+    return go_to_line(sensor_data, camera_data, reversed_map, state, startpos[0], True)
+
+
 def back_to_pink(sensor_data, camera_data, map, state):
     return list(DEFAULT_RESPONSE), state
 
@@ -442,7 +458,9 @@ FSM_DICO = {
     StateEnum.FIND_LANDING_PAD.value: find_landing_pad,
     StateEnum.TOUCHDOWN.value: touchdown,
     StateEnum.TURN_180.value: turn_around,
-    StateEnum.GO_TO_MIDDLE_BACK.value: go_to_middle_back
+    StateEnum.GO_TO_MIDDLE_BACK.value: go_to_middle_back,
+    StateEnum.READJUST.value: readjust,
+    StateEnum.GO_TO_END_BACK.value: go_to_end_line_back
 }
 
 
