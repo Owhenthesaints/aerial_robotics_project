@@ -50,10 +50,10 @@ class StateEnum(Enum):
     THIRD_SWEEP = 4
     FIND_LANDING_PAD = 5
     TOUCHDOWN = 6
-    TAKEOFF = 7
-    BACK_FIND_PINK = 8
-    BACK_TO_PINK = 9
-    BACK_TO_START = 10  # do not search LP just go to LP stored in beginning
+    TURN_180 = 7
+    GO_TO_MIDDLE_BACK = 8
+    READJUST = 9
+    GO_TO_END_BACK = 10
 
 
 PINK_FILTER_DEBUG = False
@@ -91,29 +91,6 @@ LANDING_LINE = 0.1
 INCREMENT_LANDING = 0.2
 UNBLOCKING_THRESH = 0.01
 ZONE_LIMIT_THRESH = 4.90
-
-
-def euler2rotmat(euler_angles):
-    """
-    this is a function remade from the first exercise session
-    """
-    R = np.eye(3)
-
-    R_roll = np.array([[1, 0, 0],
-                       [0, np.cos(euler_angles[0]), -np.sin(euler_angles[0])],
-                       [0, np.sin(euler_angles[0]), np.cos(euler_angles[0])]])
-
-    R_pitch = np.array([[np.cos(euler_angles[1]), 0, np.sin(euler_angles[1])],
-                        [0, 1, 0],
-                        [-np.sin(euler_angles[1]), 0, np.cos(euler_angles[1])]])
-
-    R_yaw = np.array([[np.cos(euler_angles[2]), -np.sin(euler_angles[2]), 0],
-                      [np.sin(euler_angles[2]), np.cos(euler_angles[2]), 0],
-                      [0, 0, 1]])
-
-    R = R_yaw @ R_pitch @ R_roll
-
-    return R
 
 
 def divide_map(map):
@@ -190,34 +167,34 @@ def initial_sweep(sensor_data, camera_data, map, state):
             setattr(initial_sweep, attr, value)
 
     if sensor_data["y_global"] < 1.5:
-        give_attribute("prefered_dir_left", True)
+        give_attribute("preferred_dir_left", True)
     else:
-        give_attribute("prefered_dir_left", False)
+        give_attribute("preferred_dir_left", False)
     give_attribute("angle_done", False)
     give_attribute("angle_sweep_done", False)
 
     if initial_sweep.angle_sweep_done:
         del initial_sweep.angle_sweep_done
         del initial_sweep.angle_done
-        del initial_sweep.prefered_dir_left
+        del initial_sweep.preferred_dir_left
         return list(DEFAULT_RESPONSE), state + 1
 
     # the objective of this code is to SWEEP an angle to 90 back to 0 in order to feed map
     if not initial_sweep.angle_sweep_done:
         # if gove above 90° do this
         if initial_sweep.angle_done:
-            if ((sensor_data["yaw"] > 0 - ZERO_THRESH and not initial_sweep.prefered_dir_left)
-                    or (sensor_data["yaw"] < 0 + ZERO_THRESH and initial_sweep.prefered_dir_left)):
+            if ((sensor_data["yaw"] > 0 - ZERO_THRESH and not initial_sweep.preferred_dir_left)
+                    or (sensor_data["yaw"] < 0 + ZERO_THRESH and initial_sweep.preferred_dir_left)):
                 initial_sweep.angle_sweep_done = True
                 return list(DEFAULT_RESPONSE), state
-            return turn_return(initial_sweep.prefered_dir_left, state, True)
+            return turn_return(initial_sweep.preferred_dir_left, state, True)
         # if within 90° turn towards prefered_dir
         elif np.pi / 2 > sensor_data["yaw"] > -np.pi / 2:
-            return turn_return(initial_sweep.prefered_dir_left, state)
+            return turn_return(initial_sweep.preferred_dir_left, state)
         # if out of [-90;90] angle done
         elif not initial_sweep.angle_done:
             initial_sweep.angle_done = True
-            return turn_return(initial_sweep.prefered_dir_left, state, True)
+            return turn_return(initial_sweep.preferred_dir_left, state, True)
         else:
             raise BrokenPipeError("Not supposed to be here in no_pink condition")
 
@@ -226,30 +203,52 @@ def initial_sweep(sensor_data, camera_data, map, state):
     # go to next state
     del initial_sweep.angle_sweep_done
     del initial_sweep.angle_done
-    del initial_sweep.prefered_dir_left
+    del initial_sweep.preferred_dir_left
     return list(DEFAULT_RESPONSE), state + 1
 
 
-def go_to_line(sensor_data, camera_data, map, state, line):
+def go_to_line(sensor_data, camera_data, map, state, line, reversed=False):
     def give_attribute(attr: str, value):
         if not hasattr(go_to_line, attr):
             setattr(go_to_line, attr, value)
 
     if sensor_data["y_global"] < 1.5:
-        give_attribute("preferred_dir_left", True)
+        if not reversed:
+            give_attribute("preferred_dir_left", True)
+        else:
+            give_attribute("preferred_dir_left", False)
     else:
-        give_attribute("preferred_dir_left", False)
+        if not reversed:
+            give_attribute("preferred_dir_left", False)
+        else:
+            give_attribute("preferred_dir_left", True)
 
+    # if False True
     if sensor_data["y_global"] > 2.25 and go_to_line.preferred_dir_left:
-        go_to_line.preferred_dir_left = False
+        if reversed:
+            go_to_line.preferred_dir_left = True
+        else:
+            go_to_line.preferred_dir_left = False
     if sensor_data["y_global"] < 0.75 and not go_to_line.preferred_dir_left:
-        go_to_line.preferred_dir_left = True
+        if reversed:
+            go_to_line.preferred_dir_left = False
+        else:
+            go_to_line.preferred_dir_left = True
 
-    if sensor_data["x_global"] > line:
-        del go_to_line.preferred_dir_left
-        return list(DEFAULT_RESPONSE), state + 1
+    if not reversed:
+        if sensor_data["x_global"] > line:
+            del go_to_line.preferred_dir_left
+            return list(DEFAULT_RESPONSE), state + 1
+    else:
+        if sensor_data["x_global"] < line:
+            del go_to_line.preferred_dir_left
+            return list(DEFAULT_RESPONSE), state + 1
 
     x_index, y_index = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
+    # reverse the x and y index
+    if reversed:
+        x_index = 25 - x_index
+        y_index = 15 - y_index
     # only keep 15 first columns
     func_map = make_map_functional(map)
     func_map = make_obstacles_bigger(func_map)
@@ -317,8 +316,6 @@ def find_landing_pad(sensor_data, camera_data, map, state):
     # preprocess map
     x, y = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
 
-    R = euler2rotmat([sensor_data["roll"], sensor_data["pitch"], sensor_data["yaw"]])
-
     if not hasattr(find_landing_pad, "x_init"):
         find_landing_pad.x_init = x - 1
 
@@ -343,18 +340,17 @@ def find_landing_pad(sensor_data, camera_data, map, state):
     if x > find_landing_pad.working_x:
         if not find_landing_pad.left_done:
             if not np.any(big_obstacle_map[x - 2:x, y:y + 2]):
-                vx, vy = make_straight(LIGHT_BACKWARDS[0], LIGHT_BACKWARDS[1], R)
-                vy += UNBLOCKING_THRESH
-                return [vx, vy, height_desired, 0], state
+                instruction = list(LIGHT_BACKWARDS)
+                instruction[1] += UNBLOCKING_THRESH
+                return instruction, state
         else:
             if not np.any(big_obstacle_map[x - 2:x, y - 1: y + 1]):
-                vx, vy = make_straight(LIGHT_BACKWARDS[0], LIGHT_BACKWARDS[1], R)
-                vy -= UNBLOCKING_THRESH
-                return [vx, vy, height_desired, 0], state
+                instruction = list(LIGHT_BACKWARDS)
+                instruction[1] -= UNBLOCKING_THRESH
+                return instruction, state
 
     if x < find_landing_pad.working_x:
-        vx, vy = make_straight(LIGHT_FORWARDS[0], LIGHT_FORWARDS[1], R)
-        return [vx, vy, height_desired, 0], state
+        return list(LIGHT_FORWARDS), state
 
     if not find_landing_pad.left_done:
         if y == big_obstacle_map.shape[1] - 2:
@@ -364,9 +360,9 @@ def find_landing_pad(sensor_data, camera_data, map, state):
         if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > 0.1:
             if sensor_data["x_global"] > ZONE_LIMIT_THRESH:
                 return list(STRAFE_LEFT), state
-            vx, vy = make_straight(LIGHT_FORWARDS[0], LIGHT_FORWARDS[1], R)
-            vy += UNBLOCKING_THRESH
-            return [vx, vy, height_desired, 0], state
+            instruction = list(LIGHT_FORWARDS)
+            instruction[1] += UNBLOCKING_THRESH
+            return instruction, state
         else:
             return list(STRAFE_LEFT), state
 
@@ -379,9 +375,9 @@ def find_landing_pad(sensor_data, camera_data, map, state):
         if np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1]) and sensor_data["range_front"] > 0.1:
             if sensor_data["x_global"] > ZONE_LIMIT_THRESH:
                 return list(STRAFE_RIGHT), state
-            vx, vy = make_straight(LIGHT_FORWARDS[0], LIGHT_FORWARDS[1], R)
-            vy -= UNBLOCKING_THRESH
-            return [vx, vy, height_desired, 0], state
+            instruction = list(LIGHT_FORWARDS)
+            instruction[1] -= UNBLOCKING_THRESH
+            return instruction, state
         else:
             return list(STRAFE_RIGHT), state
 
@@ -413,8 +409,32 @@ def touchdown(sensor_data, camera_data, map, state):
         return [0, 0, touchdown.gradual_z, 0], state
 
 
-def back_find_pink(sensor_data, camera_data, map, state):
-    return list(DEFAULT_RESPONSE), state
+def turn_around(sensor_data, camera_data, map, state):
+    if sensor_data["yaw"] < np.pi - ZERO_THRESH:
+        return list(TURN_RIGHT), state
+    else:
+        return list(DEFAULT_RESPONSE), state + 1
+
+
+def go_to_middle_back(sensor_data, camera_data, map, state):
+    global startpos
+    map_copy = map.copy()
+    reversed_map = np.concatenate((np.flip(map_copy[:, :16]), map_copy[:, 16:]), axis=1)
+    return go_to_line(sensor_data, camera_data, reversed_map, state, 2.5, True)
+
+
+def readjust(sensor_data, camera_data, map, state):
+    if sensor_data["yaw"] < np.pi - ZERO_THRESH:
+        return TURN_RIGHT, state
+    else:
+        return DEFAULT_RESPONSE, state + 1
+
+
+def go_to_end_line_back(sensor_data, camera_data, map, state):
+    global startpos
+    map_copy = map.copy()
+    reversed_map = np.concatenate((np.flip(map_copy[:, :16]), map_copy[:, 16:]), axis=1)
+    return go_to_line(sensor_data, camera_data, reversed_map, state, startpos[0], True)
 
 
 def back_to_pink(sensor_data, camera_data, map, state):
@@ -436,7 +456,11 @@ FSM_DICO = {
     StateEnum.GO_TO_END_LINE.value: go_to_end_line,
     StateEnum.THIRD_SWEEP.value: initial_sweep,
     StateEnum.FIND_LANDING_PAD.value: find_landing_pad,
-    StateEnum.TOUCHDOWN.value: touchdown
+    StateEnum.TOUCHDOWN.value: touchdown,
+    StateEnum.TURN_180.value: turn_around,
+    StateEnum.GO_TO_MIDDLE_BACK.value: go_to_middle_back,
+    StateEnum.READJUST.value: readjust,
+    StateEnum.GO_TO_END_BACK.value: go_to_end_line_back
 }
 
 
