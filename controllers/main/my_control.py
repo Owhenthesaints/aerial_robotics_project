@@ -93,29 +93,6 @@ UNBLOCKING_THRESH = 0.01
 ZONE_LIMIT_THRESH = 4.90
 
 
-def euler2rotmat(euler_angles):
-    """
-    this is a function remade from the first exercise session
-    """
-    R = np.eye(3)
-
-    R_roll = np.array([[1, 0, 0],
-                       [0, np.cos(euler_angles[0]), -np.sin(euler_angles[0])],
-                       [0, np.sin(euler_angles[0]), np.cos(euler_angles[0])]])
-
-    R_pitch = np.array([[np.cos(euler_angles[1]), 0, np.sin(euler_angles[1])],
-                        [0, 1, 0],
-                        [-np.sin(euler_angles[1]), 0, np.cos(euler_angles[1])]])
-
-    R_yaw = np.array([[np.cos(euler_angles[2]), -np.sin(euler_angles[2]), 0],
-                      [np.sin(euler_angles[2]), np.cos(euler_angles[2]), 0],
-                      [0, 0, 1]])
-
-    R = R_yaw @ R_pitch @ R_roll
-
-    return R
-
-
 def divide_map(map):
     """
     divide the map 2s are free squares, 1s are occupied and 0s are unexplored
@@ -317,8 +294,6 @@ def find_landing_pad(sensor_data, camera_data, map, state):
     # preprocess map
     x, y = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
 
-    R = euler2rotmat([sensor_data["roll"], sensor_data["pitch"], sensor_data["yaw"]])
-
     if not hasattr(find_landing_pad, "x_init"):
         find_landing_pad.x_init = x - 1
 
@@ -343,18 +318,17 @@ def find_landing_pad(sensor_data, camera_data, map, state):
     if x > find_landing_pad.working_x:
         if not find_landing_pad.left_done:
             if not np.any(big_obstacle_map[x - 2:x, y:y + 2]):
-                vx, vy = make_straight(LIGHT_BACKWARDS[0], LIGHT_BACKWARDS[1], R)
-                vy += UNBLOCKING_THRESH
-                return [vx, vy, height_desired, 0], state
+                instruction = list(LIGHT_BACKWARDS)
+                instruction[1] += UNBLOCKING_THRESH
+                return instruction, state
         else:
             if not np.any(big_obstacle_map[x - 2:x, y - 1: y + 1]):
-                vx, vy = make_straight(LIGHT_BACKWARDS[0], LIGHT_BACKWARDS[1], R)
-                vy -= UNBLOCKING_THRESH
-                return [vx, vy, height_desired, 0], state
+                instruction = list(LIGHT_BACKWARDS)
+                instruction[1] -= UNBLOCKING_THRESH
+                return instruction, state
 
     if x < find_landing_pad.working_x:
-        vx, vy = make_straight(LIGHT_FORWARDS[0], LIGHT_FORWARDS[1], R)
-        return [vx, vy, height_desired, 0], state
+        return list(LIGHT_FORWARDS), state
 
     if not find_landing_pad.left_done:
         if y == big_obstacle_map.shape[1] - 2:
@@ -364,9 +338,9 @@ def find_landing_pad(sensor_data, camera_data, map, state):
         if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > 0.1:
             if sensor_data["x_global"] > ZONE_LIMIT_THRESH:
                 return list(STRAFE_LEFT), state
-            vx, vy = make_straight(LIGHT_FORWARDS[0], LIGHT_FORWARDS[1], R)
-            vy += UNBLOCKING_THRESH
-            return [vx, vy, height_desired, 0], state
+            instruction = list(LIGHT_FORWARDS)
+            instruction[1] += UNBLOCKING_THRESH
+            return instruction, state
         else:
             return list(STRAFE_LEFT), state
 
@@ -379,9 +353,9 @@ def find_landing_pad(sensor_data, camera_data, map, state):
         if np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1]) and sensor_data["range_front"] > 0.1:
             if sensor_data["x_global"] > ZONE_LIMIT_THRESH:
                 return list(STRAFE_RIGHT), state
-            vx, vy = make_straight(LIGHT_FORWARDS[0], LIGHT_FORWARDS[1], R)
-            vy -= UNBLOCKING_THRESH
-            return [vx, vy, height_desired, 0], state
+            instruction = list(LIGHT_FORWARDS)
+            instruction[1] -= UNBLOCKING_THRESH
+            return instruction, state
         else:
             return list(STRAFE_RIGHT), state
 
