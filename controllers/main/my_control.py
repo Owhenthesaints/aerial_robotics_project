@@ -54,6 +54,7 @@ class StateEnum(Enum):
     GO_TO_MIDDLE_BACK = 8
     READJUST = 9
     GO_TO_END_BACK = 10
+    FIND_LANDING_PAD_BACK = 11
 
 
 PINK_FILTER_DEBUG = False
@@ -311,10 +312,13 @@ def make_straight(Vx, Vy, R):
     return R_copy[0][0] * Vx + R_copy[0][1] * Vy, R_copy[1][0] * Vx + R_copy[1][1] * Vy
 
 
-def find_landing_pad(sensor_data, camera_data, map, state):
+def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
     global lp_location
     # preprocess map
     x, y = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
+    if reversed:
+        x = 25 - x
+        y = 15 - y
 
     if not hasattr(find_landing_pad, "x_init"):
         find_landing_pad.x_init = x - 1
@@ -437,6 +441,13 @@ def go_to_end_line_back(sensor_data, camera_data, map, state):
     return go_to_line(sensor_data, camera_data, reversed_map, state, startpos[0], True)
 
 
+def find_landing_pad_back(sensor_data, camera_data, map, state):
+    global startpos
+    map_copy = map.copy()
+    reversed_map = np.concatenate((np.flip(map_copy[:, :16]), map_copy[:, 16:]), axis=1)
+    return find_landing_pad(sensor_data, camera_data, reversed_map, state, True)
+
+
 def back_to_pink(sensor_data, camera_data, map, state):
     return list(DEFAULT_RESPONSE), state
 
@@ -460,7 +471,8 @@ FSM_DICO = {
     StateEnum.TURN_180.value: turn_around,
     StateEnum.GO_TO_MIDDLE_BACK.value: go_to_middle_back,
     StateEnum.READJUST.value: readjust,
-    StateEnum.GO_TO_END_BACK.value: go_to_end_line_back
+    StateEnum.GO_TO_END_BACK.value: go_to_end_line_back,
+    StateEnum.FIND_LANDING_PAD_BACK.value: find_landing_pad_back
 }
 
 
