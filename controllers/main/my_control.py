@@ -95,6 +95,7 @@ INCREMENT_LANDING = 0.2
 UNBLOCKING_THRESH = 0.01
 ZONE_LIMIT_THRESH = 4.90
 BACK_READJUST = 0.2
+LIMIT_ZONE_FRONT = 0.1
 
 
 def divide_map(map):
@@ -251,7 +252,7 @@ def go_to_line(sensor_data, camera_data, map, state, line, reversed=False):
     x_index, y_index = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
     # reverse the x and y index
     if reversed:
-        x_index = 25 - x_index
+        x_index = 24 - x_index
         y_index = 15 - y_index
     # only keep 15 first columns
     func_map = make_map_functional(map)
@@ -341,6 +342,7 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
         find_landing_pad.left_done = False
 
     if sensor_data["z_global"] > LP_THRESH:
+        del find_landing_pad.working_x
         return list(DEFAULT_RESPONSE), state + 1
 
     # try to always be on the  the working_x
@@ -454,14 +456,18 @@ def find_landing_pad_back(sensor_data, camera_data, map, state):
     reversed_map = np.concatenate((np.flip(map_copy[:, :16]), map_copy[:, 16:]), axis=1)
     return find_landing_pad(sensor_data, camera_data, reversed_map, state, True)
 
+
 def second_touchdown(sensor_data, camera_data, map, state):
     return touchdown(sensor_data, camera_data, map, state, True)
+
 
 def idle(sensor_data, camera_data, map, state):
     return [0, 0, 0.05, 0], state
 
+
 def default_case(*args):
     raise ValueError("state out of range or not a state", args[3])
+
 
 FSM_DICO = {
     StateEnum.INITIAL_SWEEP.value: initial_sweep,
