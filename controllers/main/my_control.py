@@ -94,6 +94,7 @@ LANDING_LINE = 0.1
 INCREMENT_LANDING = 0.2
 UNBLOCKING_THRESH = 0.01
 ZONE_LIMIT_THRESH = 4.90
+BACK_READJUST = 0.2
 
 
 def divide_map(map):
@@ -319,7 +320,7 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
     # preprocess map
     x, y = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
     if reversed:
-        x = 25 - x
+        x = 24 - x
         y = 15 - y
 
     if not hasattr(find_landing_pad, "x_init"):
@@ -421,7 +422,7 @@ def touchdown(sensor_data, camera_data, map, state, final=False):
 
 def turn_around(sensor_data, camera_data, map, state):
     if sensor_data["yaw"] < np.pi - ZERO_THRESH:
-        return list(TURN_RIGHT), state
+        return list(TURN_LEFT), state
     else:
         return list(DEFAULT_RESPONSE), state + 1
 
@@ -435,7 +436,7 @@ def go_to_middle_back(sensor_data, camera_data, map, state):
 
 def readjust(sensor_data, camera_data, map, state):
     if sensor_data["yaw"] < np.pi - ZERO_THRESH:
-        return TURN_RIGHT, state
+        return list(TURN_LEFT), state
     else:
         return DEFAULT_RESPONSE, state + 1
 
