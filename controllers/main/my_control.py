@@ -55,6 +55,8 @@ class StateEnum(Enum):
     READJUST = 9
     GO_TO_END_BACK = 10
     FIND_LANDING_PAD_BACK = 11
+    SECOND_TOUCHDOWN = 12
+    IDLE = 13
 
 
 PINK_FILTER_DEBUG = False
@@ -386,8 +388,7 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
             return list(STRAFE_RIGHT), state
 
 
-def touchdown(sensor_data, camera_data, map, state):
-    print("height: ", sensor_data["z_global"])
+def touchdown(sensor_data, camera_data, map, state, final=False):
     if not hasattr(touchdown, "little_boost"):
         touchdown.little_boost = 0
         return list(GO_STRAIGHT), state
@@ -400,12 +401,17 @@ def touchdown(sensor_data, camera_data, map, state):
 
     if touchdown.landed:
         if sensor_data["range_down"] > height_desired - 0.05:
+            del touchdown.landed
             return list(DEFAULT_RESPONSE), state + 1
         return list(DEFAULT_RESPONSE), state
 
     if sensor_data["range_down"] < LANDING_LINE:
         touchdown.landed = True
-        return list(DEFAULT_RESPONSE), state
+        if final:
+            del touchdown.landed
+            return [0, 0, 0.05, 0], state + 1
+        else:
+            return list(DEFAULT_RESPONSE), state
     if sensor_data["range_down"] > touchdown.gradual_z + 0.03:
         return [0, 0, touchdown.gradual_z, 0], state
     else:
@@ -447,18 +453,14 @@ def find_landing_pad_back(sensor_data, camera_data, map, state):
     reversed_map = np.concatenate((np.flip(map_copy[:, :16]), map_copy[:, 16:]), axis=1)
     return find_landing_pad(sensor_data, camera_data, reversed_map, state, True)
 
+def second_touchdown(sensor_data, camera_data, map, state):
+    return touchdown(sensor_data, camera_data, map, state, True)
 
-def back_to_pink(sensor_data, camera_data, map, state):
-    return list(DEFAULT_RESPONSE), state
-
-
-def back_to_start(sensor_data, camera_data, map, state):
-    return list(DEFAULT_RESPONSE), state
-
+def idle(sensor_data, camera_data, map, state):
+    return [0, 0, 0.05, 0], state
 
 def default_case(*args):
     raise ValueError("state out of range or not a state", args[3])
-
 
 FSM_DICO = {
     StateEnum.INITIAL_SWEEP.value: initial_sweep,
@@ -472,7 +474,9 @@ FSM_DICO = {
     StateEnum.GO_TO_MIDDLE_BACK.value: go_to_middle_back,
     StateEnum.READJUST.value: readjust,
     StateEnum.GO_TO_END_BACK.value: go_to_end_line_back,
-    StateEnum.FIND_LANDING_PAD_BACK.value: find_landing_pad_back
+    StateEnum.FIND_LANDING_PAD_BACK.value: find_landing_pad_back,
+    StateEnum.SECOND_TOUCHDOWN.value: second_touchdown,
+    StateEnum.IDLE.value: idle,
 }
 
 
