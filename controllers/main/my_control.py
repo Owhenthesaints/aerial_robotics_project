@@ -90,7 +90,7 @@ HALFWAY_LINE = 2.5
 END_LINE = 3.7
 LP_THRESH = 1.03
 BOOST_TIME = 10
-LANDING_LINE = 0.1
+LANDING_LINE = 0.08
 INCREMENT_LANDING = 0.05
 UNBLOCKING_THRESH = 0.01
 ZONE_LIMIT_THRESH = 4.90
@@ -472,7 +472,7 @@ def second_touchdown(sensor_data, camera_data, map, state):
 
 
 def idle(sensor_data, camera_data, map, state):
-    return [0, 0, 0.05, 0], state
+    return [0, 0, 0, 0], state
 
 
 def default_case(*args):
