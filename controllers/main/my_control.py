@@ -54,6 +54,9 @@ class StateEnum(Enum):
     GO_TO_MIDDLE_BACK = 8
     READJUST = 9
     GO_TO_END_BACK = 10
+    FIND_LANDING_PAD_BACK = 11
+    SECOND_TOUCHDOWN = 12
+    IDLE = 13
 
 
 PINK_FILTER_DEBUG = False
@@ -88,9 +91,14 @@ END_LINE = 3.7
 LP_THRESH = 1.03
 BOOST_TIME = 10
 LANDING_LINE = 0.1
-INCREMENT_LANDING = 0.2
+INCREMENT_LANDING = 0.05
 UNBLOCKING_THRESH = 0.01
 ZONE_LIMIT_THRESH = 4.90
+BACK_READJUST = 0.2
+LIMIT_ZONE_FRONT = 0.1
+MAP_BOUNDS = (0.04, 4.96)
+RANGE_FRONT_THRESH_LP = 0.1
+RANGE_FRONT_THRESH = 1
 
 
 def divide_map(map):
@@ -247,21 +255,21 @@ def go_to_line(sensor_data, camera_data, map, state, line, reversed=False):
     x_index, y_index = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
     # reverse the x and y index
     if reversed:
-        x_index = 25 - x_index
+        x_index = 24 - x_index
         y_index = 15 - y_index
     # only keep 15 first columns
     func_map = make_map_functional(map)
     func_map = make_obstacles_bigger(func_map)
     # create a grid where only obstacles are forbidden
     if go_to_line.preferred_dir_left:
-        if not np.any(func_map[x_index:x_index + 3, y_index] == 1):
+        if not np.any(func_map[x_index:x_index + 3, y_index] == 1) and sensor_data["range_front"] > RANGE_FRONT_THRESH:
             return list(GO_STRAIGHT), state
         elif not np.any(func_map[x_index, y_index:y_index + 2] == 1):
             return list(GO_LEFT), state
         else:
             return list(GO_BACKWARDS), state
     else:
-        if not np.any(func_map[x_index:x_index + 3, y_index] == 1):
+        if not np.any(func_map[x_index:x_index + 3, y_index] == 1) and sensor_data["range_front"] > RANGE_FRONT_THRESH:
             return list(GO_STRAIGHT), state
         elif not np.any(func_map[x_index, y_index - 1:y_index + 1] == 1):
             return list(GO_RIGHT), state
@@ -292,7 +300,7 @@ def strafe_line(line, line_number, index_y) -> tuple[list, bool]:
     if not hasattr(strafe_line, "done_left"):
         strafe_line.done_left = False
 
-    if strafe_line.done_left == True:
+    if strafe_line.done_left:
         if strafe_line.right >= index_y:
             return list(DEFAULT_RESPONSE), True
         else:
@@ -311,10 +319,13 @@ def make_straight(Vx, Vy, R):
     return R_copy[0][0] * Vx + R_copy[0][1] * Vy, R_copy[1][0] * Vx + R_copy[1][1] * Vy
 
 
-def find_landing_pad(sensor_data, camera_data, map, state):
+def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
     global lp_location
     # preprocess map
     x, y = get_position_on_map(map.shape, sensor_data["x_global"], sensor_data["y_global"])
+    if reversed:
+        x = 24 - x
+        y = 15 - y
 
     if not hasattr(find_landing_pad, "x_init"):
         find_landing_pad.x_init = x - 1
@@ -334,7 +345,11 @@ def find_landing_pad(sensor_data, camera_data, map, state):
         find_landing_pad.left_done = False
 
     if sensor_data["z_global"] > LP_THRESH:
+        del find_landing_pad.working_x
         return list(DEFAULT_RESPONSE), state + 1
+
+    if sensor_data["x_global"] > MAP_BOUNDS[1] or sensor_data["x_global"] < MAP_BOUNDS[0]:
+        return list(LIGHT_BACKWARDS), state
 
     # try to always be on the  the working_x
     if x > find_landing_pad.working_x:
@@ -357,8 +372,9 @@ def find_landing_pad(sensor_data, camera_data, map, state):
             find_landing_pad.left_done = True
             return list(STRAFE_RIGHT), state
         # if the map has nothing to the left
-        if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > 0.1:
-            if sensor_data["x_global"] > ZONE_LIMIT_THRESH:
+        if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
+            if (sensor_data["x_global"] > ZONE_LIMIT_THRESH) or (
+                    reversed and sensor_data["x_global"] < LIMIT_ZONE_FRONT):
                 return list(STRAFE_LEFT), state
             instruction = list(LIGHT_FORWARDS)
             instruction[1] += UNBLOCKING_THRESH
@@ -373,7 +389,8 @@ def find_landing_pad(sensor_data, camera_data, map, state):
             return list(DEFAULT_RESPONSE), state
 
         if np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1]) and sensor_data["range_front"] > 0.1:
-            if sensor_data["x_global"] > ZONE_LIMIT_THRESH:
+            if (sensor_data["x_global"] > ZONE_LIMIT_THRESH) or (
+                    reversed and sensor_data["x_global"] < LIMIT_ZONE_FRONT):
                 return list(STRAFE_RIGHT), state
             instruction = list(LIGHT_FORWARDS)
             instruction[1] -= UNBLOCKING_THRESH
@@ -382,8 +399,7 @@ def find_landing_pad(sensor_data, camera_data, map, state):
             return list(STRAFE_RIGHT), state
 
 
-def touchdown(sensor_data, camera_data, map, state):
-    print("height: ", sensor_data["z_global"])
+def touchdown(sensor_data, camera_data, map, state, final=False):
     if not hasattr(touchdown, "little_boost"):
         touchdown.little_boost = 0
         return list(GO_STRAIGHT), state
@@ -396,12 +412,19 @@ def touchdown(sensor_data, camera_data, map, state):
 
     if touchdown.landed:
         if sensor_data["range_down"] > height_desired - 0.05:
+            del touchdown.landed
+            del touchdown.gradual_z
             return list(DEFAULT_RESPONSE), state + 1
         return list(DEFAULT_RESPONSE), state
 
     if sensor_data["range_down"] < LANDING_LINE:
         touchdown.landed = True
-        return list(DEFAULT_RESPONSE), state
+        if final:
+            del touchdown.landed
+            del touchdown.gradual_z
+            return [0, 0, 0.05, 0], state + 1
+        else:
+            return list(DEFAULT_RESPONSE), state
     if sensor_data["range_down"] > touchdown.gradual_z + 0.03:
         return [0, 0, touchdown.gradual_z, 0], state
     else:
@@ -411,7 +434,7 @@ def touchdown(sensor_data, camera_data, map, state):
 
 def turn_around(sensor_data, camera_data, map, state):
     if sensor_data["yaw"] < np.pi - ZERO_THRESH:
-        return list(TURN_RIGHT), state
+        return list(TURN_LEFT), state
     else:
         return list(DEFAULT_RESPONSE), state + 1
 
@@ -425,7 +448,7 @@ def go_to_middle_back(sensor_data, camera_data, map, state):
 
 def readjust(sensor_data, camera_data, map, state):
     if sensor_data["yaw"] < np.pi - ZERO_THRESH:
-        return TURN_RIGHT, state
+        return list(TURN_LEFT), state
     else:
         return DEFAULT_RESPONSE, state + 1
 
@@ -434,15 +457,22 @@ def go_to_end_line_back(sensor_data, camera_data, map, state):
     global startpos
     map_copy = map.copy()
     reversed_map = np.concatenate((np.flip(map_copy[:, :16]), map_copy[:, 16:]), axis=1)
-    return go_to_line(sensor_data, camera_data, reversed_map, state, startpos[0], True)
+    return go_to_line(sensor_data, camera_data, reversed_map, state, startpos[0] + 0.1, True)
 
 
-def back_to_pink(sensor_data, camera_data, map, state):
-    return list(DEFAULT_RESPONSE), state
+def find_landing_pad_back(sensor_data, camera_data, map, state):
+    global startpos
+    map_copy = map.copy()
+    reversed_map = np.concatenate((np.flip(map_copy[:, :16]), map_copy[:, 16:]), axis=1)
+    return find_landing_pad(sensor_data, camera_data, reversed_map, state, True)
 
 
-def back_to_start(sensor_data, camera_data, map, state):
-    return list(DEFAULT_RESPONSE), state
+def second_touchdown(sensor_data, camera_data, map, state):
+    return touchdown(sensor_data, camera_data, map, state, True)
+
+
+def idle(sensor_data, camera_data, map, state):
+    return [0, 0, 0.05, 0], state
 
 
 def default_case(*args):
@@ -460,7 +490,10 @@ FSM_DICO = {
     StateEnum.TURN_180.value: turn_around,
     StateEnum.GO_TO_MIDDLE_BACK.value: go_to_middle_back,
     StateEnum.READJUST.value: readjust,
-    StateEnum.GO_TO_END_BACK.value: go_to_end_line_back
+    StateEnum.GO_TO_END_BACK.value: go_to_end_line_back,
+    StateEnum.FIND_LANDING_PAD_BACK.value: find_landing_pad_back,
+    StateEnum.SECOND_TOUCHDOWN.value: second_touchdown,
+    StateEnum.IDLE.value: idle,
 }
 
 
