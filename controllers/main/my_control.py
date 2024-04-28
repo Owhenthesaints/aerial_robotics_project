@@ -97,6 +97,8 @@ ZONE_LIMIT_THRESH = 4.90
 BACK_READJUST = 0.2
 LIMIT_ZONE_FRONT = 0.1
 MAP_BOUNDS = (0.04, 4.96)
+RANGE_FRONT_THRESH_LP = 0.1
+RANGE_FRONT_THRESH = 1
 
 
 def divide_map(map):
@@ -260,14 +262,14 @@ def go_to_line(sensor_data, camera_data, map, state, line, reversed=False):
     func_map = make_obstacles_bigger(func_map)
     # create a grid where only obstacles are forbidden
     if go_to_line.preferred_dir_left:
-        if not np.any(func_map[x_index:x_index + 3, y_index] == 1):
+        if not np.any(func_map[x_index:x_index + 3, y_index] == 1) and sensor_data["range_front"] > RANGE_FRONT_THRESH:
             return list(GO_STRAIGHT), state
         elif not np.any(func_map[x_index, y_index:y_index + 2] == 1):
             return list(GO_LEFT), state
         else:
             return list(GO_BACKWARDS), state
     else:
-        if not np.any(func_map[x_index:x_index + 3, y_index] == 1):
+        if not np.any(func_map[x_index:x_index + 3, y_index] == 1) and sensor_data["range_front"] > RANGE_FRONT_THRESH:
             return list(GO_STRAIGHT), state
         elif not np.any(func_map[x_index, y_index - 1:y_index + 1] == 1):
             return list(GO_RIGHT), state
@@ -298,7 +300,7 @@ def strafe_line(line, line_number, index_y) -> tuple[list, bool]:
     if not hasattr(strafe_line, "done_left"):
         strafe_line.done_left = False
 
-    if strafe_line.done_left == True:
+    if strafe_line.done_left:
         if strafe_line.right >= index_y:
             return list(DEFAULT_RESPONSE), True
         else:
@@ -370,7 +372,7 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
             find_landing_pad.left_done = True
             return list(STRAFE_RIGHT), state
         # if the map has nothing to the left
-        if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > 0.1:
+        if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
             if (sensor_data["x_global"] > ZONE_LIMIT_THRESH) or (
                     reversed and sensor_data["x_global"] < LIMIT_ZONE_FRONT):
                 return list(STRAFE_LEFT), state
