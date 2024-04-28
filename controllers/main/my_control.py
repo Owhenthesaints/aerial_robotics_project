@@ -96,6 +96,7 @@ UNBLOCKING_THRESH = 0.01
 ZONE_LIMIT_THRESH = 4.90
 BACK_READJUST = 0.2
 LIMIT_ZONE_FRONT = 0.1
+MAP_BOUNDS = (0.04, 4.96)
 
 
 def divide_map(map):
@@ -345,6 +346,9 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
         del find_landing_pad.working_x
         return list(DEFAULT_RESPONSE), state + 1
 
+    if sensor_data["x_global"] > MAP_BOUNDS[1] or sensor_data["x_global"] < MAP_BOUNDS[0]:
+        return list(LIGHT_BACKWARDS), state
+
     # try to always be on the  the working_x
     if x > find_landing_pad.working_x:
         if not find_landing_pad.left_done:
@@ -394,7 +398,6 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
 
 
 def touchdown(sensor_data, camera_data, map, state, final=False):
-
     if not hasattr(touchdown, "little_boost"):
         touchdown.little_boost = 0
         return list(GO_STRAIGHT), state
@@ -452,7 +455,7 @@ def go_to_end_line_back(sensor_data, camera_data, map, state):
     global startpos
     map_copy = map.copy()
     reversed_map = np.concatenate((np.flip(map_copy[:, :16]), map_copy[:, 16:]), axis=1)
-    return go_to_line(sensor_data, camera_data, reversed_map, state, startpos[0]+0.1, True)
+    return go_to_line(sensor_data, camera_data, reversed_map, state, startpos[0] + 0.1, True)
 
 
 def find_landing_pad_back(sensor_data, camera_data, map, state):
