@@ -99,6 +99,8 @@ LIMIT_ZONE_FRONT = 0.1
 MAP_BOUNDS = (0.04, 4.96)
 RANGE_FRONT_THRESH_LP = 0.1
 RANGE_FRONT_THRESH = 1
+BACKWARD_THRESH = 4.5
+BACKWARD_THRESH_2 = 0.5
 
 
 def divide_map(map):
@@ -337,6 +339,8 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
 
     # transform x into the right shape for this array
     x -= map.shape[0] - big_obstacle_map.shape[0]
+    if not hasattr(find_landing_pad, "backward_mode"):
+        find_landing_pad.backward_mode = False
     # define the line we are working on
     if not hasattr(find_landing_pad, "working_x"):
         find_landing_pad.working_x = x
@@ -380,20 +384,29 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
             instruction[1] += UNBLOCKING_THRESH
         return instruction, state
 
+    go_backward = (reversed and sensor_data["x_global"] < BACKWARD_THRESH_2) or (
+            not reversed and sensor_data["x_global"] > BACKWARD_THRESH)
+
     if not find_landing_pad.left_done:
         if y == big_obstacle_map.shape[1] - 2:
             find_landing_pad.left_done = True
             return list(STRAFE_RIGHT), state
         # if the map has nothing to the left
-        if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
-            if (sensor_data["x_global"] > ZONE_LIMIT_THRESH) or (
-                    reversed and sensor_data["x_global"] < LIMIT_ZONE_FRONT):
+
+        if not go_backward:
+            if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
+                instruction = list(LIGHT_FORWARDS)
+                instruction[1] += UNBLOCKING_THRESH
+                return instruction, state
+            else:
                 return list(STRAFE_LEFT), state
-            instruction = list(LIGHT_FORWARDS)
-            instruction[1] += UNBLOCKING_THRESH
-            return instruction, state
         else:
-            return list(STRAFE_LEFT), state
+            if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
+                instruction = list(LIGHT_BACKWARDS)
+                instruction[1] += 0.1
+                return instruction, state
+            else:
+                return list(STRAFE_LEFT), state
 
     else:
         if y == 2:
@@ -401,15 +414,20 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
             find_landing_pad.working_x += 1
             return list(DEFAULT_RESPONSE), state
 
-        if np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
-            if (sensor_data["x_global"] > ZONE_LIMIT_THRESH) or (
-                    reversed and sensor_data["x_global"] < LIMIT_ZONE_FRONT):
+        if not go_backward:
+            if np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
+                instruction = list(LIGHT_FORWARDS)
+                instruction[1] -= UNBLOCKING_THRESH
+                return instruction, state
+            else:
                 return list(STRAFE_RIGHT), state
-            instruction = list(LIGHT_FORWARDS)
-            instruction[1] -= UNBLOCKING_THRESH
-            return instruction, state
         else:
-            return list(STRAFE_RIGHT), state
+            if np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
+                instruction = list(LIGHT_BACKWARDS)
+                instruction[1] -= 0.1
+                return instruction, state
+            else:
+                return list(STRAFE_RIGHT), state
 
 
 def touchdown(sensor_data, camera_data, map, state, final=False):
