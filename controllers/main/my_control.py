@@ -91,7 +91,7 @@ END_LINE = 3.7
 LP_THRESH = 1.03
 BOOST_TIME = 10
 LANDING_LINE = 0.1
-INCREMENT_LANDING = 0.2
+INCREMENT_LANDING = 0.05
 UNBLOCKING_THRESH = 0.01
 ZONE_LIMIT_THRESH = 4.90
 BACK_READJUST = 0.2
@@ -367,7 +367,8 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
             return list(STRAFE_RIGHT), state
         # if the map has nothing to the left
         if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > 0.1:
-            if sensor_data["x_global"] > ZONE_LIMIT_THRESH:
+            if (sensor_data["x_global"] > ZONE_LIMIT_THRESH) or (
+                    reversed and sensor_data["x_global"] < LIMIT_ZONE_FRONT):
                 return list(STRAFE_LEFT), state
             instruction = list(LIGHT_FORWARDS)
             instruction[1] += UNBLOCKING_THRESH
@@ -382,7 +383,8 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
             return list(DEFAULT_RESPONSE), state
 
         if np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1]) and sensor_data["range_front"] > 0.1:
-            if sensor_data["x_global"] > ZONE_LIMIT_THRESH:
+            if (sensor_data["x_global"] > ZONE_LIMIT_THRESH) or (
+                    reversed and sensor_data["x_global"] < LIMIT_ZONE_FRONT):
                 return list(STRAFE_RIGHT), state
             instruction = list(LIGHT_FORWARDS)
             instruction[1] -= UNBLOCKING_THRESH
@@ -392,6 +394,7 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
 
 
 def touchdown(sensor_data, camera_data, map, state, final=False):
+
     if not hasattr(touchdown, "little_boost"):
         touchdown.little_boost = 0
         return list(GO_STRAIGHT), state
@@ -405,6 +408,7 @@ def touchdown(sensor_data, camera_data, map, state, final=False):
     if touchdown.landed:
         if sensor_data["range_down"] > height_desired - 0.05:
             del touchdown.landed
+            del touchdown.gradual_z
             return list(DEFAULT_RESPONSE), state + 1
         return list(DEFAULT_RESPONSE), state
 
@@ -412,6 +416,7 @@ def touchdown(sensor_data, camera_data, map, state, final=False):
         touchdown.landed = True
         if final:
             del touchdown.landed
+            del touchdown.gradual_z
             return [0, 0, 0.05, 0], state + 1
         else:
             return list(DEFAULT_RESPONSE), state
@@ -447,7 +452,7 @@ def go_to_end_line_back(sensor_data, camera_data, map, state):
     global startpos
     map_copy = map.copy()
     reversed_map = np.concatenate((np.flip(map_copy[:, :16]), map_copy[:, 16:]), axis=1)
-    return go_to_line(sensor_data, camera_data, reversed_map, state, startpos[0], True)
+    return go_to_line(sensor_data, camera_data, reversed_map, state, startpos[0]+0.1, True)
 
 
 def find_landing_pad_back(sensor_data, camera_data, map, state):
