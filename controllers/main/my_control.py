@@ -87,10 +87,10 @@ MAP_WIDTH = 3
 MAP_THRESHOLD = 0.1
 # halfway point
 HALFWAY_LINE = 2.5
-END_LINE = 3.7
+END_LINE = 3.5
 LP_THRESH = 1.03
 BOOST_TIME = 10
-LANDING_LINE = 0.08
+LANDING_LINE = 0.07
 INCREMENT_LANDING = 0.05
 UNBLOCKING_THRESH = 0.01
 ZONE_LIMIT_THRESH = 4.90
@@ -231,16 +231,16 @@ def go_to_line(sensor_data, camera_data, map, state, line, reversed=False):
         else:
             give_attribute("preferred_dir_left", True)
 
-    # if False True
-    if sensor_data["y_global"] > 2.25 and go_to_line.preferred_dir_left:
-        if reversed:
+    if reversed:
+        if sensor_data["y_global"] < 0.75 and go_to_line.preferred_dir_left:
+            go_to_line.preferred_dir_left = False
+        elif sensor_data["y_global"] > 2.25 and not go_to_line.preferred_dir_left:
             go_to_line.preferred_dir_left = True
-        else:
+    # if False True
+    else:
+        if sensor_data["y_global"] > 2.25 and go_to_line.preferred_dir_left:
             go_to_line.preferred_dir_left = False
-    if sensor_data["y_global"] < 0.75 and not go_to_line.preferred_dir_left:
-        if reversed:
-            go_to_line.preferred_dir_left = False
-        else:
+        if sensor_data["y_global"] < 0.75 and not go_to_line.preferred_dir_left:
             go_to_line.preferred_dir_left = True
 
     if not reversed:
@@ -365,6 +365,11 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
                 return instruction, state
 
     if x < find_landing_pad.working_x:
+        if big_obstacle_map[x + 1, y]:
+            if find_landing_pad.left_done:
+                return list(STRAFE_RIGHT), state
+            else:
+                return list(STRAFE_LEFT), state
         return list(LIGHT_FORWARDS), state
 
     if not find_landing_pad.left_done:
