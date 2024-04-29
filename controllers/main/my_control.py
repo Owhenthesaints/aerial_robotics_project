@@ -298,7 +298,6 @@ def setup_attribute(x):
 
 
 def setup_left_done(y, big_obstacle_map):
-
     if not hasattr(setup_left_done, "out_of_danger"):
         setup_left_done.out_of_danger = False
 
@@ -308,9 +307,9 @@ def setup_left_done(y, big_obstacle_map):
     if y >= big_obstacle_map.shape[1] - 2:
         find_landing_pad.left_done = True
     if y <= 2 and setup_left_done.out_of_danger:
-            find_landing_pad.left_done = False
-            setup_left_done.out_of_danger = False
-            find_landing_pad.working_x += 1
+        find_landing_pad.left_done = False
+        setup_left_done.out_of_danger = False
+        find_landing_pad.working_x += 1
 
 
 def make_trajectory_unblocking(instruction):
@@ -362,12 +361,12 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
                 return make_trajectory_unblocking(list(LIGHT_BACKWARDS)), state
 
     if x < find_landing_pad.working_x:
-        if big_obstacle_map[x + 1, y]:
-            if find_landing_pad.left_done:
-                return list(STRAFE_RIGHT), state
-            else:
-                return list(STRAFE_LEFT), state
-        return list(LIGHT_FORWARDS), state
+        if not find_landing_pad.left_done:
+            if not np.any(big_obstacle_map[x + 1:x + 3, y:y + 2]):
+                return make_trajectory_unblocking(list(LIGHT_FORWARDS)), state
+        else:
+            if not np.any(big_obstacle_map[x + 1:x + 3, y - 1: y + 1]):
+                return make_trajectory_unblocking(list(LIGHT_FORWARDS)), state
 
     if sensor_data["range_front"] < RANGE_FRONT_THRESH_LP:
         return make_trajectory_unblocking(list(LIGHT_BACKWARDS)), state
