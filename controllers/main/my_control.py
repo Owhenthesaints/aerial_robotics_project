@@ -92,13 +92,15 @@ LP_THRESH = 1.03
 BOOST_TIME = 10
 LANDING_LINE = 0.07
 INCREMENT_LANDING = 0.05
-UNBLOCKING_THRESH = 0.01
+UNBLOCKING_THRESH = 0.03
 ZONE_LIMIT_THRESH = 4.90
 BACK_READJUST = 0.2
 LIMIT_ZONE_FRONT = 0.1
 MAP_BOUNDS = (0.04, 4.96)
 RANGE_FRONT_THRESH_LP = 0.1
 RANGE_FRONT_THRESH = 1
+BACKWARD_THRESH = 4.6
+BACKWARD_THRESH_2 = 0.4
 
 
 def divide_map(map):
@@ -296,6 +298,18 @@ def setup_attribute(x):
     if not hasattr(find_landing_pad, "left_done"):
         find_landing_pad.left_done = False
 
+    if not hasattr(find_landing_pad, "backward_mode"):
+        find_landing_pad.backward_mode = False
+
+
+def handle_double_threshhold(x_global, reversed):
+    if not find_landing_pad.backward_mode:
+        find_landing_pad.backward_mode = (reversed and x_global < BACKWARD_THRESH_2) or (
+                not reversed and x_global > BACKWARD_THRESH)
+    else:
+        find_landing_pad.backward_mode = (reversed and x_global < BACKWARD_THRESH_2 + 0.4) or (
+                not reversed and x_global > BACKWARD_THRESH - 0.4)
+
 
 def setup_left_done(y, big_obstacle_map):
     if not hasattr(setup_left_done, "out_of_danger"):
@@ -343,6 +357,8 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
 
     setup_left_done(y, big_obstacle_map)
 
+    handle_double_threshhold(sensor_data["x_global"], reversed)
+
     if sensor_data["z_global"] > LP_THRESH:
         del find_landing_pad.working_x
         del find_landing_pad.left_done
@@ -373,21 +389,25 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
 
     if not find_landing_pad.left_done:
         # if the map has nothing to the left
-        if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
+        if np.any(big_obstacle_map[x - 1:x + 2, y: y + 2]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
             if (sensor_data["x_global"] > ZONE_LIMIT_THRESH) or (
                     reversed and sensor_data["x_global"] < LIMIT_ZONE_FRONT):
                 return list(STRAFE_LEFT), state
-            return make_trajectory_unblocking(list(LIGHT_FORWARDS)), state
+            if not find_landing_pad.backward_mode:
+                return make_trajectory_unblocking(list(LIGHT_FORWARDS)), state
+            return make_trajectory_unblocking(list(LIGHT_BACKWARDS)), state
         else:
             return list(STRAFE_LEFT), state
 
     else:
 
-        if np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
+        if np.any(big_obstacle_map[x - 1:x + 2, y - 1: y + 1]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
             if (sensor_data["x_global"] > ZONE_LIMIT_THRESH) or (
                     reversed and sensor_data["x_global"] < LIMIT_ZONE_FRONT):
                 return list(STRAFE_RIGHT), state
-            return make_trajectory_unblocking(list(LIGHT_FORWARDS)), state
+            if not find_landing_pad.backward_mode:
+                return make_trajectory_unblocking(list(LIGHT_FORWARDS)), state
+            return make_trajectory_unblocking(list(LIGHT_BACKWARDS)), state
         else:
             return list(STRAFE_RIGHT), state
 
