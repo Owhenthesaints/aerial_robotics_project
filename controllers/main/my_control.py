@@ -76,9 +76,9 @@ GO_STRAIGHT = (0.5, 0, height_desired, 0)
 LIGHT_FORWARDS = (0.2, 0, height_desired, 0)
 GO_BACKWARDS = (-0.5, 0, height_desired, 0)
 LIGHT_BACKWARDS = (-0.2, 0, height_desired, 0)
-GO_LEFT = (0, 0.5, height_desired, 0)
+GO_LEFT = (0, 0.4, height_desired, 0)
 STRAFE_LEFT = (0, 0.25, height_desired, 0)
-GO_RIGHT = (0, -0.5, height_desired, 0)
+GO_RIGHT = (0, -0.4, height_desired, 0)
 STRAFE_RIGHT = (0, -0.25, height_desired, 0)
 GO_BACK_RIGHT = (-1, -1, height_desired, 0)
 LIGHT_LANDING = (0, 0, 0.3, 0)
@@ -307,8 +307,8 @@ def handle_double_threshhold(x_global, reversed):
         find_landing_pad.backward_mode = (reversed and x_global < BACKWARD_THRESH_2) or (
                 not reversed and x_global > BACKWARD_THRESH)
     else:
-        find_landing_pad.backward_mode = (reversed and x_global < BACKWARD_THRESH_2 + 0.4) or (
-                not reversed and x_global > BACKWARD_THRESH - 0.4)
+        find_landing_pad.backward_mode = (reversed and x_global < BACKWARD_THRESH_2 + 1) or (
+                not reversed and x_global > BACKWARD_THRESH - 1)
 
 
 def setup_left_done(y, big_obstacle_map):
@@ -402,12 +402,13 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
 
     else:
         if not find_landing_pad.backward_mode:
-            if np.any(big_obstacle_map[x - 1:x + 1, y-1: y + 1]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
+            if np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1]) and sensor_data[
+                "range_front"] > RANGE_FRONT_THRESH_LP:
                 return make_trajectory_unblocking(list(LIGHT_FORWARDS)), state
             else:
                 return list(STRAFE_RIGHT), state
         else:
-            if np.any(big_obstacle_map[x:x + 2, y-1: y + 1]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
+            if np.any(big_obstacle_map[x:x + 2, y - 1: y + 1]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
                 return make_trajectory_unblocking(list(LIGHT_BACKWARDS)), state
             else:
                 return list(STRAFE_RIGHT), state
