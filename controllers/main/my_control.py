@@ -288,35 +288,29 @@ def go_to_end_line(sensor_data, camera_data, map, state):
     return go_to_line(sensor_data, camera_data, map, state, END_LINE)
 
 
-def strafe_line(line, line_number, index_y) -> tuple[list, bool]:
-    """
-    returns response and Done
-    """
-
-    if not hasattr(strafe_line, "left"):
-        strafe_line.left = np.where(line == line_number)[0][-1]
-    if not hasattr(strafe_line, "right"):
-        strafe_line.right = np.argwhere(line == line_number)[0][0]
-    if not hasattr(strafe_line, "done_left"):
-        strafe_line.done_left = False
-
-    if strafe_line.done_left:
-        if strafe_line.right >= index_y:
-            return list(DEFAULT_RESPONSE), True
-        else:
-            return list(STRAFE_RIGHT), False
-    else:
-        if strafe_line.left <= index_y:
-            strafe_line.done_left = True
-            return list(DEFAULT_RESPONSE), False
-        else:
-            return list(STRAFE_LEFT), False
+def setup_attribute(x):
+    # define the line we are working on
+    if not hasattr(find_landing_pad, "working_x"):
+        find_landing_pad.working_x = x
+    # define the direction we are going
+    if not hasattr(find_landing_pad, "left_done"):
+        find_landing_pad.left_done = False
 
 
-def make_straight(Vx, Vy, R):
-    R_copy = R.copy()
-    R_copy = R_copy[0:2, 0:2]
-    return R_copy[0][0] * Vx + R_copy[0][1] * Vy, R_copy[1][0] * Vx + R_copy[1][1] * Vy
+def setup_left_done(y, big_obstacle_map):
+
+    if not hasattr(setup_left_done, "out_of_danger"):
+        setup_left_done.out_of_danger = False
+
+    if y > 3:
+        setup_left_done.out_of_danger = True
+
+    if y >= big_obstacle_map.shape[1] - 2:
+        find_landing_pad.left_done = True
+    if y <= 2 and setup_left_done.out_of_danger:
+            find_landing_pad.left_done = False
+            setup_left_done.out_of_danger = False
+            find_landing_pad.working_x += 1
 
 
 def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
@@ -337,15 +331,14 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
 
     # transform x into the right shape for this array
     x -= map.shape[0] - big_obstacle_map.shape[0]
-    # define the line we are working on
-    if not hasattr(find_landing_pad, "working_x"):
-        find_landing_pad.working_x = x
-    # define the direction we are going
-    if not hasattr(find_landing_pad, "left_done"):
-        find_landing_pad.left_done = False
+
+    setup_attribute(x)
+
+    setup_left_done(y, big_obstacle_map)
 
     if sensor_data["z_global"] > LP_THRESH:
         del find_landing_pad.working_x
+        del find_landing_pad.left_done
         return list(DEFAULT_RESPONSE), state + 1
 
     if sensor_data["x_global"] > MAP_BOUNDS[1] or sensor_data["x_global"] < MAP_BOUNDS[0]:
@@ -381,9 +374,6 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
         return instruction, state
 
     if not find_landing_pad.left_done:
-        if y == big_obstacle_map.shape[1] - 2:
-            find_landing_pad.left_done = True
-            return list(STRAFE_RIGHT), state
         # if the map has nothing to the left
         if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
             if (sensor_data["x_global"] > ZONE_LIMIT_THRESH) or (
@@ -396,10 +386,6 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
             return list(STRAFE_LEFT), state
 
     else:
-        if y == 2:
-            del find_landing_pad.left_done
-            find_landing_pad.working_x += 1
-            return list(DEFAULT_RESPONSE), state
 
         if np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
             if (sensor_data["x_global"] > ZONE_LIMIT_THRESH) or (
