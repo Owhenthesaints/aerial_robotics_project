@@ -84,7 +84,7 @@ GO_BACK_RIGHT = (-1, -1, height_desired, 0)
 LIGHT_LANDING = (0, 0, 0.3, 0)
 MAP_LENGTH = 5
 MAP_WIDTH = 3
-MAP_THRESHOLD = 0.25
+MAP_THRESHOLD = 0.2
 # halfway point
 HALFWAY_LINE = 2.5
 END_LINE = 3.5
@@ -101,7 +101,6 @@ RANGE_FRONT_THRESH_LP = 0.1
 RANGE_FRONT_THRESH = 1
 BACKWARD_THRESH = 4.5
 BACKWARD_THRESH_2 = 0.5
-
 
 
 def divide_map(map):
@@ -291,36 +290,40 @@ def go_to_end_line(sensor_data, camera_data, map, state):
     return go_to_line(sensor_data, camera_data, map, state, END_LINE)
 
 
-def strafe_line(line, line_number, index_y) -> tuple[list, bool]:
-    """
-    returns response and Done
-    """
+def setup_attr(x):
+    if not hasattr(find_landing_pad, "backward_mode"):
+        find_landing_pad.backward_mode = False
+    # define the line we are working on
+    if not hasattr(find_landing_pad, "working_x"):
+        find_landing_pad.working_x = x
+    # define the direction we are going
+    if not hasattr(find_landing_pad, "left_done"):
+        find_landing_pad.left_done = False
 
-    if not hasattr(strafe_line, "left"):
-        strafe_line.left = np.where(line == line_number)[0][-1]
-    if not hasattr(strafe_line, "right"):
-        strafe_line.right = np.argwhere(line == line_number)[0][0]
-    if not hasattr(strafe_line, "done_left"):
-        strafe_line.done_left = False
 
-    if strafe_line.done_left:
-        if strafe_line.right >= index_y:
-            return list(DEFAULT_RESPONSE), True
-        else:
-            return list(STRAFE_RIGHT), False
+def backward_mode_thresh(sensor_data, camera_data, map, state, reversed):
+    if not find_landing_pad.backward_mode:
+        find_landing_pad.backward_mode = (reversed and sensor_data["x_global"] < BACKWARD_THRESH_2) or (
+                not reversed and sensor_data["x_global"] > BACKWARD_THRESH)
     else:
-        if strafe_line.left <= index_y:
-            strafe_line.done_left = True
-            return list(DEFAULT_RESPONSE), False
-        else:
-            return list(STRAFE_LEFT), False
+        find_landing_pad.backward_mode = (reversed and sensor_data["x_global"] < BACKWARD_THRESH_2 + 0.4) or (
+                not reversed and sensor_data["x_global"] > BACKWARD_THRESH - 0.4)
 
 
-def make_straight(Vx, Vy, R):
-    R_copy = R.copy()
-    R_copy = R_copy[0:2, 0:2]
-    return R_copy[0][0] * Vx + R_copy[0][1] * Vy, R_copy[1][0] * Vx + R_copy[1][1] * Vy
+def left_done_logic(y, big_obstacle_map):
+    if y >= big_obstacle_map.shape[1] - 2:
+        find_landing_pad.left_done = True
 
+    if y <= 2 and find_landing_pad.left_done:
+        find_landing_pad.left_done = False
+        find_landing_pad.working_x += 1
+
+def make_trajectory_unblocking(instruction):
+    if find_landing_pad.left_done:
+        instruction[1] -= UNBLOCKING_THRESH
+    else:
+        instruction[1] += UNBLOCKING_THRESH
+    return instruction
 
 def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
     global lp_location
@@ -340,14 +343,12 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
 
     # transform x into the right shape for this array
     x -= map.shape[0] - big_obstacle_map.shape[0]
-    if not hasattr(find_landing_pad, "backward_mode"):
-        find_landing_pad.backward_mode = False
-    # define the line we are working on
-    if not hasattr(find_landing_pad, "working_x"):
-        find_landing_pad.working_x = x
-    # define the direction we are going
-    if not hasattr(find_landing_pad, "left_done"):
-        find_landing_pad.left_done = False
+
+    setup_attr(x)
+
+    backward_mode_thresh(sensor_data, camera_data, map, state, reversed)
+
+    left_done_logic(y, big_obstacle_map)
 
     if sensor_data["z_global"] > LP_THRESH:
         del find_landing_pad.working_x
@@ -355,6 +356,14 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
 
     if sensor_data["x_global"] > MAP_BOUNDS[1] or sensor_data["x_global"] < MAP_BOUNDS[0]:
         return list(LIGHT_BACKWARDS), state
+
+    if sensor_data["range_front"] < RANGE_FRONT_THRESH_LP:
+        instruction = list(LIGHT_BACKWARDS)
+        if find_landing_pad.left_done:
+            instruction[1] -= UNBLOCKING_THRESH
+        else:
+            instruction[1] += UNBLOCKING_THRESH
+        return instruction, state
 
     # try to always be on the  the working_x
     if x > find_landing_pad.working_x:
@@ -370,34 +379,24 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
                 return instruction, state
 
     if x < find_landing_pad.working_x:
-        if big_obstacle_map[x + 1, y]:
+        if np.any(big_obstacle_map[x: x + 3, y - 1: y + 2]):
             if find_landing_pad.left_done:
+                if big_obstacle_map[x, y-1]: # if there is an obstacle on right
+                    if find_landing_pad.backward_mode:
+                        return make_trajectory_unblocking(list(LIGHT_BACKWARDS)), state
+                    return make_trajectory_unblocking(list(LIGHT_FORWARDS)), state
                 return list(STRAFE_RIGHT), state
             else:
+                if big_obstacle_map[x, y+1]:
+                    if find_landing_pad.backward_mode:
+                        return make_trajectory_unblocking(list(LIGHT_BACKWARDS)), state
+                    return make_trajectory_unblocking(list(LIGHT_FORWARDS)), state
                 return list(STRAFE_LEFT), state
-        return list(LIGHT_FORWARDS), state
-
-    if sensor_data["range_front"] < RANGE_FRONT_THRESH_LP:
-        instruction = list(LIGHT_BACKWARDS)
-        if find_landing_pad.left_done:
-            instruction[1] -= UNBLOCKING_THRESH
         else:
-            instruction[1] += UNBLOCKING_THRESH
-        return instruction, state
-
-    if not find_landing_pad.backward_mode:
-        find_landing_pad.backward_mode = (reversed and sensor_data["x_global"] < BACKWARD_THRESH_2) or (
-            not reversed and sensor_data["x_global"] > BACKWARD_THRESH)
-    else:
-        find_landing_pad.backward_mode = (reversed and sensor_data["x_global"] < BACKWARD_THRESH_2 + 0.3) or (
-                not reversed and sensor_data["x_global"] > BACKWARD_THRESH - 0.3)
+            return make_trajectory_unblocking(list(LIGHT_FORWARDS)), state
 
     if not find_landing_pad.left_done:
-        if y == big_obstacle_map.shape[1] - 2:
-            find_landing_pad.left_done = True
-            return list(STRAFE_RIGHT), state
         # if the map has nothing to the left
-
         if not find_landing_pad.backward_mode:
             if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
                 instruction = list(LIGHT_FORWARDS)
@@ -406,27 +405,23 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
             else:
                 return list(STRAFE_LEFT), state
         else:
-            if np.any(big_obstacle_map[x :x + 2, y: y + 2]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
+            if np.any(big_obstacle_map[x:x + 2, y: y + 2]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
                 instruction = list(LIGHT_BACKWARDS)
                 instruction[1] += UNBLOCKING_THRESH
                 return instruction, state
             else:
                 return list(STRAFE_LEFT), state
 
-    else:
-        if y == 2:
-            del find_landing_pad.left_done
-            find_landing_pad.working_x += 1
-            return list(DEFAULT_RESPONSE), state
-
+    else:  # if not left done
         if not find_landing_pad.backward_mode:
-            if np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
+            if (np.any(big_obstacle_map[x - 1:x + 1, y - 1: y + 1])
+                    and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP):
                 instruction = list(LIGHT_FORWARDS)
                 instruction[1] -= UNBLOCKING_THRESH
                 return instruction, state
             else:
                 return list(STRAFE_RIGHT), state
-        else:
+        else:  # if in backward mode
             if np.any(big_obstacle_map[x:x + 2, y - 1: y + 1]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
                 instruction = list(LIGHT_BACKWARDS)
                 instruction[1] -= UNBLOCKING_THRESH
