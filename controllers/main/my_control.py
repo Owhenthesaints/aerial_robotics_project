@@ -389,27 +389,28 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
 
     if not find_landing_pad.left_done:
         # if the map has nothing to the left
-        if np.any(big_obstacle_map[x - 1:x + 2, y: y + 2]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
-            if (sensor_data["x_global"] > ZONE_LIMIT_THRESH) or (
-                    reversed and sensor_data["x_global"] < LIMIT_ZONE_FRONT):
-                return list(STRAFE_LEFT), state
-            if not find_landing_pad.backward_mode:
+        if not find_landing_pad.backward_mode:
+            if np.any(big_obstacle_map[x - 1:x + 1, y: y + 2]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
                 return make_trajectory_unblocking(list(LIGHT_FORWARDS)), state
-            return make_trajectory_unblocking(list(LIGHT_BACKWARDS)), state
+            else:
+                return list(STRAFE_LEFT), state
         else:
-            return list(STRAFE_LEFT), state
+            if np.any(big_obstacle_map[x:x + 2, y: y + 2]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
+                return make_trajectory_unblocking(list(LIGHT_BACKWARDS)), state
+            else:
+                return list(STRAFE_LEFT), state
 
     else:
-
-        if np.any(big_obstacle_map[x - 1:x + 2, y - 1: y + 1]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
-            if (sensor_data["x_global"] > ZONE_LIMIT_THRESH) or (
-                    reversed and sensor_data["x_global"] < LIMIT_ZONE_FRONT):
-                return list(STRAFE_RIGHT), state
-            if not find_landing_pad.backward_mode:
+        if not find_landing_pad.backward_mode:
+            if np.any(big_obstacle_map[x - 1:x + 1, y-1: y + 1]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
                 return make_trajectory_unblocking(list(LIGHT_FORWARDS)), state
-            return make_trajectory_unblocking(list(LIGHT_BACKWARDS)), state
+            else:
+                return list(STRAFE_RIGHT), state
         else:
-            return list(STRAFE_RIGHT), state
+            if np.any(big_obstacle_map[x:x + 2, y-1: y + 1]) and sensor_data["range_front"] > RANGE_FRONT_THRESH_LP:
+                return make_trajectory_unblocking(list(LIGHT_BACKWARDS)), state
+            else:
+                return list(STRAFE_RIGHT), state
 
 
 def touchdown(sensor_data, camera_data, map, state, final=False):
