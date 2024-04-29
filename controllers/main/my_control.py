@@ -313,6 +313,14 @@ def setup_left_done(y, big_obstacle_map):
             find_landing_pad.working_x += 1
 
 
+def make_trajectory_unblocking(instruction):
+    if find_landing_pad.left_done:
+        instruction[1] -= UNBLOCKING_THRESH
+    else:
+        instruction[1] += UNBLOCKING_THRESH
+    return instruction
+
+
 def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
     global lp_location
     # preprocess map
@@ -348,14 +356,10 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
     if x > find_landing_pad.working_x:
         if not find_landing_pad.left_done:
             if not np.any(big_obstacle_map[x - 2:x, y:y + 2]):
-                instruction = list(LIGHT_BACKWARDS)
-                instruction[1] += UNBLOCKING_THRESH
-                return instruction, state
+                return make_trajectory_unblocking(list(LIGHT_BACKWARDS)), state
         else:
             if not np.any(big_obstacle_map[x - 2:x, y - 1: y + 1]):
-                instruction = list(LIGHT_BACKWARDS)
-                instruction[1] -= UNBLOCKING_THRESH
-                return instruction, state
+                return make_trajectory_unblocking(list(LIGHT_BACKWARDS)), state
 
     if x < find_landing_pad.working_x:
         if big_obstacle_map[x + 1, y]:
@@ -366,12 +370,7 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
         return list(LIGHT_FORWARDS), state
 
     if sensor_data["range_front"] < RANGE_FRONT_THRESH_LP:
-        instruction = list(LIGHT_BACKWARDS)
-        if find_landing_pad.left_done:
-            instruction[1] -= UNBLOCKING_THRESH
-        else:
-            instruction[1] += UNBLOCKING_THRESH
-        return instruction, state
+        return make_trajectory_unblocking(list(LIGHT_BACKWARDS)), state
 
     if not find_landing_pad.left_done:
         # if the map has nothing to the left
@@ -379,9 +378,7 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
             if (sensor_data["x_global"] > ZONE_LIMIT_THRESH) or (
                     reversed and sensor_data["x_global"] < LIMIT_ZONE_FRONT):
                 return list(STRAFE_LEFT), state
-            instruction = list(LIGHT_FORWARDS)
-            instruction[1] += UNBLOCKING_THRESH
-            return instruction, state
+            return make_trajectory_unblocking(list(LIGHT_FORWARDS)), state
         else:
             return list(STRAFE_LEFT), state
 
@@ -391,9 +388,7 @@ def find_landing_pad(sensor_data, camera_data, map, state, reversed=False):
             if (sensor_data["x_global"] > ZONE_LIMIT_THRESH) or (
                     reversed and sensor_data["x_global"] < LIMIT_ZONE_FRONT):
                 return list(STRAFE_RIGHT), state
-            instruction = list(LIGHT_FORWARDS)
-            instruction[1] -= UNBLOCKING_THRESH
-            return instruction, state
+            return make_trajectory_unblocking(list(LIGHT_FORWARDS)), state
         else:
             return list(STRAFE_RIGHT), state
 
