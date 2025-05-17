@@ -1,4 +1,4 @@
-#VRML_SIM R2023b utf8
+#VRML_SIM R2025a utf8
 
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/objects/backgrounds/protos/TexturedBackground.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/objects/floors/protos/Floor.proto"
@@ -17,15 +17,17 @@ WorldInfo {
   }
 }
 Viewpoint {
-  orientation 0.10108478615221962 0.9392679168334673 0.32795982439298665 0.2711620466657379
-  position -4.199091781819125 0.9226805489300893 1.7138841146235997
+  orientation -0.03811792152530344 0.9887548304324916 0.14460604881887032 1.045789372549486
+  position -2.8470252528733133 2.5229262977289033 8.009598242781854
   follow "crazyflie"
 }
 TexturedBackground {
 }
 Crazyflie {
-  translation 0.9660470000000083 0.8372480000000008 0.12
-  rotation 1.4432514312069223e-13 -7.094951043479413e-14 1 0.004202810932212425
+  hidden linearVelocity_0 0.26784675523425566 0.2330194756737892 -0.04123187536473706
+  hidden angularVelocity_0 -0.17531301359320128 -0.23417509819003204 0.1452366803780029
+  translation 0.34583196181300074 1.872019474047311 1.0107600038808058
+  rotation -0.4725969942891419 -0.7785246559360445 -0.41297874169081905 -0.18365733757460578
   name "crazyflie"
   controller "<extern>"
   supervisor TRUE
@@ -237,7 +239,7 @@ DEF CHECKERBOARD_A4_25mm_8x6 Solid {
   name "checkerboard"
 }
 DEF GOAL Solid {
-  translation 0 0 1
+  translation 2.5045098885474433 1.2718419298809944 1.1054187301312954
   children [
     DEF GOAL_SHAPE Shape {
       appearance Appearance {
@@ -255,7 +257,7 @@ DEF GOAL Solid {
   name "goal"
 }
 DEF OBSTACLE1 Solid {
-  translation 1.75 0.82 0.74
+  translation 1.6345759947472809 1.4438326899656542 0.74
   children [
     DEF CYLINDER_SHAPE Shape {
       appearance PBRAppearance {
@@ -277,7 +279,7 @@ DEF OBSTACLE1 Solid {
   boundingObject USE CYLINDER_SHAPE
 }
 DEF OBSTACLE2 Solid {
-  translation 1.73 2.5 0.74
+  translation 2.8668809736021372 2.4794709244688047 0.74
   children [
     USE CYLINDER_SHAPE
   ]
@@ -285,7 +287,7 @@ DEF OBSTACLE2 Solid {
   boundingObject USE CYLINDER_SHAPE
 }
 DEF OBSTACLE3 Solid {
-  translation 4.46 2.11 0.74
+  translation 3.6255384982917853 1.784085592020796 0.74
   children [
     USE CYLINDER_SHAPE
   ]
@@ -293,7 +295,7 @@ DEF OBSTACLE3 Solid {
   boundingObject USE CYLINDER_SHAPE
 }
 DEF OBSTACLE4 Solid {
-  translation 0.68 1.94 0.74
+  translation 4.624256094565673 2.2445213663918153 0.74
   children [
     USE CYLINDER_SHAPE
   ]
@@ -301,7 +303,7 @@ DEF OBSTACLE4 Solid {
   boundingObject USE CYLINDER_SHAPE
 }
 DEF OBSTACLE5 Solid {
-  translation 3.59 0.36 0.74
+  translation 0.7430853155008095 1.342012405089081 0.74
   children [
     USE CYLINDER_SHAPE
   ]
@@ -309,7 +311,7 @@ DEF OBSTACLE5 Solid {
   boundingObject USE CYLINDER_SHAPE
 }
 DEF OBSTACLE6 Solid {
-  translation 3.73 1.54 0.75
+  translation 2.0548235857867825 2.2796279451557595 0.74
   children [
     DEF BOX_SHAPE Shape {
       appearance PBRAppearance {
@@ -330,7 +332,7 @@ DEF OBSTACLE6 Solid {
   boundingObject USE BOX_SHAPE
 }
 DEF OBSTACLE7 Solid {
-  translation 2.86 1.15 0.75
+  translation 3.2398740854201438 0.3027427663546279 0.74
   children [
     USE BOX_SHAPE
   ]
@@ -338,7 +340,7 @@ DEF OBSTACLE7 Solid {
   boundingObject USE BOX_SHAPE
 }
 DEF OBSTACLE8 Solid {
-  translation 3 2.39 0.75
+  translation 2.27106611431651 0.493069964526085 0.74
   children [
     USE BOX_SHAPE
   ]
@@ -346,7 +348,7 @@ DEF OBSTACLE8 Solid {
   boundingObject USE BOX_SHAPE
 }
 DEF OBSTACLE9 Solid {
-  translation 0.86 0.24 0.75
+  translation 0.3952006433621059 2.606475072575067 0.74
   children [
     USE BOX_SHAPE
   ]
@@ -354,7 +356,7 @@ DEF OBSTACLE9 Solid {
   boundingObject USE BOX_SHAPE
 }
 DEF OBSTACLE10 Solid {
-  translation 2.03 1.64 0.75
+  translation 1.1138765421487287 0.5973483946186362 0.74
   children [
     USE BOX_SHAPE
   ]
@@ -362,7 +364,7 @@ DEF OBSTACLE10 Solid {
   boundingObject USE BOX_SHAPE
 }
 DEF TAKE_OFF_PAD Solid {
-  translation 0.9660470000000083 0.8372480000000008 0.05
+  translation 1.0599796663725432 2.119090567056726 0.05
   children [
     DEF PAD_SHAPE Shape {
       appearance PBRAppearance {
@@ -383,7 +385,7 @@ DEF TAKE_OFF_PAD Solid {
   boundingObject USE PAD_SHAPE
 }
 DEF LANDING_PAD Solid {
-  translation 4.5 1 0.05
+  translation 4.17851442274776 0.9214002007031121 0.05
   children [
     USE PAD_SHAPE
   ]
