@@ -7,3 +7,4 @@ Your can find the documentation here.
 This is my final result
 
 ![final result](final_result.gif)
+<img src="final_result.gif" width="800">
